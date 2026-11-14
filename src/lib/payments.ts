@@ -71,41 +71,56 @@ export async function ensureDefaultPaymentGateways() {
 }
 
 export async function getPublicPaymentGateways() {
-  const gateways = await prisma.paymentGatewayConfig.findMany({
-    where: { enabled: true },
-    orderBy: { displayName: "asc" },
-    select: {
-      code: true,
-      displayName: true,
-      publicInstructions: true,
-      encryptedSettings: true,
-    },
-  });
-  return gateways.map((gateway) => {
-    let publicDetails: Pick<
-      PaymentGatewaySettings,
-      "bankVpa" | "bankAccountName" | "bankAccountNumber" | "bankIfsc"
-    > = {};
-    if (gateway.code === "UPI_BANK" && gateway.encryptedSettings) {
-      try {
-        const settings = decryptPaymentSettings(gateway.encryptedSettings);
-        publicDetails = {
-          bankVpa: settings.bankVpa,
-          bankAccountName: settings.bankAccountName,
-          bankAccountNumber: settings.bankAccountNumber,
-          bankIfsc: settings.bankIfsc,
-        };
-      } catch {
-        publicDetails = {};
+  try {
+    const gateways = await prisma.paymentGatewayConfig.findMany({
+      where: { enabled: true },
+      orderBy: { displayName: "asc" },
+      select: {
+        code: true,
+        displayName: true,
+        publicInstructions: true,
+        encryptedSettings: true,
+      },
+    });
+
+    return gateways.map((gateway) => {
+      let publicDetails: Pick<
+        PaymentGatewaySettings,
+        "bankVpa" | "bankAccountName" | "bankAccountNumber" | "bankIfsc"
+      > = {};
+
+      if (gateway.code === "UPI_BANK" && gateway.encryptedSettings) {
+        try {
+          const settings = decryptPaymentSettings(
+            gateway.encryptedSettings
+          );
+
+          publicDetails = {
+            bankVpa: settings.bankVpa,
+            bankAccountName: settings.bankAccountName,
+            bankAccountNumber: settings.bankAccountNumber,
+            bankIfsc: settings.bankIfsc,
+          };
+        } catch (error) {
+          console.error("Unable to decrypt public UPI settings:", error);
+        }
       }
-    }
-    return {
-      code: gateway.code,
-      displayName: gateway.displayName,
-      publicInstructions: gateway.publicInstructions,
-      publicDetails,
-    };
-  });
+
+      return {
+        code: gateway.code,
+        displayName: gateway.displayName,
+        publicInstructions: gateway.publicInstructions,
+        publicDetails,
+      };
+    });
+  } catch (error) {
+    console.error(
+      "Unable to load payment gateways. Returning empty list:",
+      error
+    );
+
+    return [];
+  }
 }
 
 export function createPaymentRequestNumber() {

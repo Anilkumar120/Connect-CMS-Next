@@ -1,3 +1,4 @@
+
 import { Suspense } from "react";
 import { connection } from "next/server";
 import PublicLayout from "@/components/public/PublicLayout";
@@ -21,33 +22,54 @@ export default function Home({ searchParams }: Props) {
 
 async function HomeContent({ searchParams }: Props) {
   await connection();
-  const [settings, query] = await Promise.all([getSiteSettings(), searchParams]);
+
+  const [settings, query] = await Promise.all([
+    getSiteSettings(),
+    searchParams,
+  ]);
+
   const postId = typeof query.p === "string" ? query.p : "";
 
   if (postId) {
-    const post = await prisma.post.findFirst({
-      where: {
-        id: postId,
-        status: "PUBLISHED",
-        deletedAt: null,
-        postTypeId: null,
-      },
-      include: {
-        categories: {
-          include: { category: { select: { name: true, slug: true } } },
+    try {
+      const post = await prisma.post.findFirst({
+        where: {
+          id: postId,
+          status: "PUBLISHED",
+          deletedAt: null,
+          postTypeId: null,
         },
-        tags: {
-          include: { tag: { select: { name: true, slug: true, imageUrl: true } } },
+        include: {
+          categories: {
+            include: {
+              category: {
+                select: { name: true, slug: true },
+              },
+            },
+          },
+          tags: {
+            include: {
+              tag: {
+                select: {
+                  name: true,
+                  slug: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
         },
-      },
-    });
+      });
 
-    if (post) {
-      return (
-        <PublicLayout>
-          <PublicPostView post={post} settings={settings} />
-        </PublicLayout>
-      );
+      if (post) {
+        return (
+          <PublicLayout>
+            <PublicPostView post={post} settings={settings} />
+          </PublicLayout>
+        );
+      }
+    } catch (error) {
+      console.error("Homepage post query failed:", error);
     }
   }
 
@@ -55,29 +77,33 @@ async function HomeContent({ searchParams }: Props) {
     settings.reading.showOnFront === "page" &&
     settings.reading.homepagePageId
   ) {
-    const page = await prisma.page.findFirst({
-      where: {
-        id: settings.reading.homepagePageId,
-        status: "PUBLISHED",
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        description: true,
-        seoTitle: true,
-        seoDescription: true,
-        content: true,
-      },
-    });
+    try {
+      const page = await prisma.page.findFirst({
+        where: {
+          id: settings.reading.homepagePageId,
+          status: "PUBLISHED",
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          seoTitle: true,
+          seoDescription: true,
+          content: true,
+        },
+      });
 
-    if (page) {
-      return (
-        <PublicLayout>
-          <CMSPageView page={page} />
-        </PublicLayout>
-      );
+      if (page) {
+        return (
+          <PublicLayout>
+            <CMSPageView page={page} />
+          </PublicLayout>
+        );
+      }
+    } catch (error) {
+      console.error("Homepage CMS page query failed:", error);
     }
   }
 

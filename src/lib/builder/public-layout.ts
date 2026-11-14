@@ -71,25 +71,47 @@ export function getPublicBuilderLayout(value: unknown): BuilderLayout | null {
 export async function getPublishedBuilderDocument(
   documentKey: string
 ): Promise<PublicBuilderDocumentData | null> {
-  const document = await prisma.builderDocument.findFirst({
-    where: { documentKey, status: "PUBLISHED" },
-    select: { layout: true, globalStyles: true },
-  });
+  try {
+    const document = await prisma.builderDocument.findFirst({
+      where: {
+        documentKey,
+        status: "PUBLISHED",
+      },
+      select: {
+        layout: true,
+        globalStyles: true,
+      },
+    });
 
-  const layout = getPublicBuilderLayout(document?.layout);
-  if (document && !layout) {
-    console.error("Stored public builder layout is invalid:", documentKey);
+    const layout = getPublicBuilderLayout(document?.layout);
+
+    if (document && !layout) {
+      console.error(
+        "Stored public builder layout is invalid:",
+        documentKey
+      );
+    }
+
+    if (!layout) return null;
+
+    const globalStyles =
+      document?.globalStyles &&
+      typeof document.globalStyles === "object" &&
+      !Array.isArray(document.globalStyles)
+        ? (document.globalStyles as unknown as BuilderGlobalStyles)
+        : null;
+
+    return {
+      layout,
+      globalStyles,
+    };
+  } catch (error) {
+    console.error(
+      `Unable to load published builder document: ${documentKey}`,
+      error
+    );
+
+    return null;
   }
-
-  if (!layout) return null;
-
-  const globalStyles =
-    document?.globalStyles &&
-    typeof document.globalStyles === "object" &&
-    !Array.isArray(document.globalStyles)
-      ? (document.globalStyles as unknown as BuilderGlobalStyles)
-      : null;
-
-  return { layout, globalStyles };
 }
 

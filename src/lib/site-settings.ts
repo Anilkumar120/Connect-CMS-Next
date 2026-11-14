@@ -101,13 +101,23 @@ export const defaultSiteSettings: SiteSettings = {
 };
 
 export async function getSiteSettings(): Promise<SiteSettings> {
-  const record = await prisma.siteSetting.findUnique({
-    where: { key: "site-settings" },
-    select: { value: true },
-  });
-  const parsed = siteSettingsSchema.safeParse(record?.value);
+  try {
+    const record = await prisma.siteSetting.findUnique({
+      where: { key: "site-settings" },
+      select: { value: true },
+    });
 
-  return parsed.success ? parsed.data : defaultSiteSettings;
+    const parsed = siteSettingsSchema.safeParse(record?.value);
+
+    return parsed.success ? parsed.data : defaultSiteSettings;
+  } catch (error) {
+    console.error(
+      "Unable to load site settings. Using defaults:",
+      error
+    );
+
+    return defaultSiteSettings;
+  }
 }
 
 export function getPostPermalink(
