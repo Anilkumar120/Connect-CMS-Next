@@ -1,0 +1,398 @@
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.68);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 100%);
+  max-height: min(780px, 92vh);
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+  color: #1e293b;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.header p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.closeButton {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.tabs {
+  display: flex;
+  gap: 24px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tabs button {
+  padding: 15px 2px 13px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tabs button.activeTab {
+  border-bottom-color: #2271b1;
+  color: #2271b1;
+}
+
+.error {
+  margin: 14px 24px 0;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.libraryLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  min-height: 400px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.libraryMain {
+  min-width: 0;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.toolbar input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  outline: none;
+  font-size: 13px;
+}
+
+.toolbar input:focus {
+  border-color: #2271b1;
+  box-shadow: 0 0 0 2px rgba(34, 113, 177, 0.12);
+}
+
+.toolbar button,
+.cancelButton {
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
+  gap: 12px;
+}
+
+.imageItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 5px;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: #f1f5f9;
+  cursor: pointer;
+}
+
+.imageItem img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.imageItem:hover {
+  border-color: #94a3b8;
+}
+
+.imageItem.selectedImage {
+  border-color: #2271b1;
+  box-shadow: 0 0 0 1px #2271b1;
+}
+
+.checkmark {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  background: #2271b1;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.details {
+  padding: 18px;
+  overflow-y: auto;
+  border-left: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.details h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.details strong,
+.details span,
+.details label {
+  display: block;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.details span,
+.details p {
+  color: #64748b;
+}
+
+.details label {
+  margin-top: 18px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.details input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 11px;
+}
+
+.details p {
+  font-size: 12px;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  max-height: 170px;
+  object-fit: contain;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  background: white;
+}
+
+.muted,
+.message {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.message {
+  padding: 50px 10px;
+  text-align: center;
+}
+
+.dropzone {
+  display: flex;
+  flex: 1;
+  min-height: 350px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 22px;
+  padding: 30px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.dropzone.dragging {
+  border-color: #2271b1;
+  background: #eff6ff;
+}
+
+.uploadIcon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e0edfa;
+  color: #2271b1;
+  font-size: 30px;
+}
+
+.dropzone h3 {
+  margin: 16px 0 5px;
+  font-size: 17px;
+}
+
+.dropzone p {
+  margin: 5px 0 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.dropzone button,
+.selectButton {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid #2271b1;
+  border-radius: 5px;
+  background: #2271b1;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dropzone button:hover,
+.selectButton:hover {
+  background: #135e96;
+}
+
+.dropzone button:disabled,
+.selectButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dropzone > span {
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.progressArea {
+  width: min(400px, 100%);
+  margin-top: 24px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.progressTrack {
+  height: 7px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: #e2e8f0;
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: inherit;
+  background: #2271b1;
+  transition: width 0.2s ease;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.cancelButton {
+  min-height: 38px;
+}
+
+.cancelButton:hover {
+  background: #f1f5f9;
+}
+
+@media (max-width: 700px) {
+  .overlay {
+    padding: 8px;
+  }
+
+  .modal {
+    max-height: 96vh;
+  }
+
+  .libraryLayout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .details {
+    border-top: 1px solid #e5e7eb;
+    border-left: 0;
+  }
+
+  .libraryMain {
+    min-height: 300px;
+  }
+
+  .imageGrid {
+    grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  }
+}

@@ -1,0 +1,164 @@
+.root {
+  box-sizing: border-box;
+}
+
+.desktopList {
+  width: 100%;
+}
+
+.menuList,
+.submenu {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  list-style: none;
+  gap: var(--builder-menu-gap, 18px);
+  padding: 0;
+  margin: 0;
+  width: 100%;
+}
+
+.menuList li,
+.submenu li {
+  position: relative;
+}
+
+.menuList a,
+.submenu a {
+  display: block;
+  text-decoration: none;
+}
+
+.itemIcon {
+  flex: 0 0 auto;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+.submenu {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 8px;
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 14%);
+}
+
+.menuList li:hover > .submenu,
+.menuList li:focus-within > .submenu {
+  display: flex;
+}
+
+.toggle,
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.toggle {
+  padding: 8px;
+}
+
+.backdrop {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  background: rgb(15 23 42 / 48%);
+}
+
+.panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 100vw;
+  padding: 20px;
+  overflow: auto;
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 0 32px rgb(15 23 42 / 18%);
+}
+
+.panel.dropdown {
+  top: 12px;
+  right: 12px;
+  bottom: auto;
+  max-height: calc(100vh - 24px);
+  border-radius: 8px;
+}
+
+.panel.slide-in {
+  animation: slide-in 180ms ease-out;
+}
+
+.panel.off-canvas {
+  box-shadow: 0 0 32px rgb(15 23 42 / 18%);
+}
+
+.panel.fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.panel.left {
+  left: 0;
+}
+
+.panel.right {
+  right: 0;
+  left: auto;
+}
+
+.close {
+  align-self: flex-end;
+  padding: 8px;
+}
+
+.panelItems {
+  padding-top: 12px;
+}
+
+.panelItems .menuList,
+.panelItems .submenu {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panelItems .menuList > li,
+.panelItems .submenu > li {
+  border-bottom: 1px solid rgb(148 163 184 / 24%);
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(12px);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

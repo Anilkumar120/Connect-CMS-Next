@@ -1,0 +1,40 @@
+CREATE TABLE `PaymentGatewayConfig` (
+    `id` VARCHAR(191) NOT NULL,
+    `code` VARCHAR(50) NOT NULL,
+    `displayName` VARCHAR(120) NOT NULL,
+    `enabled` BOOLEAN NOT NULL DEFAULT false,
+    `publicInstructions` TEXT NULL,
+    `encryptedSettings` TEXT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+    UNIQUE INDEX `PaymentGatewayConfig_code_key`(`code`),
+    INDEX `PaymentGatewayConfig_enabled_idx`(`enabled`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `PaymentRequest` (
+    `id` VARCHAR(191) NOT NULL,
+    `transactionNumber` VARCHAR(40) NOT NULL,
+    `status` ENUM('REQUESTED', 'PENDING_LOOKUP') NOT NULL DEFAULT 'PENDING_LOOKUP',
+    `customerName` VARCHAR(160) NOT NULL,
+    `accountNumber` VARCHAR(80) NOT NULL,
+    `email` VARCHAR(254) NULL,
+    `phone` VARCHAR(32) NULL,
+    `amount` DECIMAL(12, 2) NOT NULL,
+    `gatewayCode` VARCHAR(50) NOT NULL,
+    `gatewayName` VARCHAR(120) NOT NULL,
+    `privacyConsent` BOOLEAN NOT NULL DEFAULT false,
+    `providerTransactionId` VARCHAR(191) NULL,
+    `providerStatus` VARCHAR(100) NULL,
+    `providerResponse` JSON NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+    UNIQUE INDEX `PaymentRequest_transactionNumber_key`(`transactionNumber`),
+    INDEX `PaymentRequest_createdAt_idx`(`createdAt`),
+    INDEX `PaymentRequest_accountNumber_idx`(`accountNumber`),
+    INDEX `PaymentRequest_email_idx`(`email`),
+    INDEX `PaymentRequest_phone_idx`(`phone`),
+    INDEX `PaymentRequest_gatewayCode_createdAt_idx`(`gatewayCode`, `createdAt`),
+    INDEX `PaymentRequest_status_createdAt_idx`(`status`, `createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

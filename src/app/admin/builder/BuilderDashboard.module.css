@@ -1,0 +1,172 @@
+
+.page {
+  width: 100%;
+  min-height: 100%;
+  padding: 30px;
+  background: #f5f7fb;
+  color: #172b4d;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.headingIcon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3984e8;
+  background: #e8f1ff;
+  border-radius: 12px;
+}
+
+.heading h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  color: #0c2f55;
+}
+
+.heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 17px 20px;
+  margin-bottom: 30px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.notice strong {
+  font-size: 15px;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.groupHeader {
+  margin-bottom: 15px;
+}
+
+.groupHeader h2 {
+  margin: 0 0 5px;
+  color: #0c2f55;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.groupHeader p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 105px;
+  padding: 19px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.card:hover {
+  border-color: #3984e8;
+  box-shadow: 0 7px 22px rgba(12, 47, 85, 0.08);
+  transform: translateY(-2px);
+}
+
+.cardIcon {
+  width: 45px;
+  height: 45px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #1768c5;
+  background: #edf5ff;
+}
+
+.cardContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardContent h3 {
+  margin: 0 0 6px;
+  color: #172b4d;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cardContent p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.arrow {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.card:hover .arrow {
+  color: #3984e8;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 18px;
+  }
+
+  .heading h1 {
+    font-size: 22px;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    min-height: 90px;
+  }
+}

@@ -1,0 +1,3 @@
+UPDATE `Page`
+SET `deletedAt` = CURRENT_TIMESTAMP(3)
+WHERE `status` = 'ARCHIVED';

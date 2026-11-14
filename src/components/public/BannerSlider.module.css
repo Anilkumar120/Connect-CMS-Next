@@ -1,0 +1,213 @@
+.slider {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #0c2f55;
+  touch-action: pan-y;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  isolation: isolate;
+  display: flex;
+  min-height: inherit;
+  align-items: center;
+  padding: clamp(32px, 7vw, 88px);
+  overflow: hidden;
+  background: #0c2f55;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 450ms ease, visibility 450ms ease;
+}
+
+.active {
+  position: relative;
+  opacity: 1;
+  visibility: visible;
+}
+
+.slider[data-transition="slide"] .slide {
+  transform: translateX(10%);
+  transition: opacity 450ms ease, transform 450ms ease, visibility 450ms ease;
+}
+
+.slider[data-transition="slide"] .active {
+  transform: translateX(0);
+}
+
+.imageLayer,
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.imageLayer {
+  z-index: 0;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.overlay {
+  z-index: 1;
+}
+
+.zoom {
+  animation: bannerZoom 8s ease-in-out infinite alternate;
+}
+
+.pan {
+  animation: bannerPan 10s ease-in-out infinite alternate;
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 760px);
+}
+
+.content h2 {
+  margin: 0 0 14px;
+  color: #fff;
+  font-size: clamp(32px, 5vw, 62px);
+  line-height: 1.08;
+}
+
+.description {
+  max-width: 680px;
+  color: #fff;
+  font-size: clamp(16px, 2vw, 20px);
+  line-height: 1.6;
+}
+
+.description :global(p) {
+  margin: 0 0 12px;
+}
+
+.description :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.button {
+  box-sizing: border-box;
+  display: inline-flex;
+  min-height: 44px;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: #0c2f55;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.button:hover {
+  background-color: var(--banner-button-hover-bg, #0c2f55);
+  color: var(--banner-button-hover-color, #fff);
+}
+
+.buttonIcon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.arrow {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 42%);
+  color: #fff;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.previous {
+  left: 16px;
+}
+
+.next {
+  right: 16px;
+}
+
+.pagination {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 18px;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 55%);
+  cursor: pointer;
+}
+
+.selectedDot {
+  background: #fff;
+  transform: scale(1.2);
+}
+
+@keyframes bannerZoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes bannerPan {
+  from {
+    transform: scale(1.06) translateX(-2%);
+  }
+  to {
+    transform: scale(1.06) translateX(2%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide,
+  .button {
+    transition: none;
+  }
+
+  .zoom,
+  .pan {
+    animation: none;
+  }
+}

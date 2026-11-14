@@ -1,0 +1,207 @@
+﻿
+Path                                                                       LineNumber Line                                                
+----                                                                       ---------- ----                                                
+D:\connectbroadband-next\src\app\admin\builder\custom\[slug]\[id]\page.tsx          4 import UniversalBuilder from "@/components/admin/...
+D:\connectbroadband-next\src\app\admin\builder\custom\[slug]\[id]\page.tsx         23     <UniversalBuilder                               
+D:\connectbroadband-next\src\app\admin\builder\templates\[kind]\page.tsx            4 import TemplateManager from "@/components/admin/T...
+D:\connectbroadband-next\src\app\admin\builder\templates\[kind]\page.tsx           17   return <TemplateManager kind={kind} />;           
+D:\connectbroadband-next\src\app\admin\builder\[kind]\[id]\page.tsx                 4 import UniversalBuilder from "@/components/admin/...
+D:\connectbroadband-next\src\app\admin\builder\[kind]\[id]\page.tsx                25     <UniversalBuilder                               
+D:\connectbroadband-next\src\app\admin\pages\[id]\builder\page.tsx                  3 export default async function PageBuilderPage({     
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                   10   PageBuilderElement,                               
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                   11   PageBuilderLayout,                                
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                   83 const elementSchema: z.ZodType<PageBuilderElement...
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  239 function countElements(elements: PageBuilderEleme...
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  363     const draft = isObject(content.layoutDraft)     
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  364       ? content.layoutDraft                         
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  398         where: { key: "header_templates" },         
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  537     const layout: PageBuilderLayout = parsed.data...
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  560             where: { key: "header_templates" },     
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  594       delete content.layoutDraft;                   
+D:\connectbroadband-next\src\app\api\admin\builder\[id]\route.ts                  629     content.layoutDraft = layout;                   
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    266     const layoutDraft = contentData.layoutDraft;    
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    273       layoutDraft &&                                
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    274       typeof layoutDraft === "object" &&            
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    275       !Array.isArray(layoutDraft)                   
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    277       contentData.layout = layoutDraft;             
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\route.ts                    278       delete contentData.layoutDraft;               
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts              7   PageBuilderElement,                               
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts              8   PageBuilderLayout,                                
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts             32 const elementSchema: z.ZodType<PageBuilderElement...
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts             87 function countElements(elements: PageBuilderEleme...
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts            155     const draft = isObject(content.layoutDraft)     
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts            156       ? content.layoutDraft                         
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts            238     const layout: PageBuilderLayout = parsed.data...
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts            250       delete content.layoutDraft;                   
+D:\connectbroadband-next\src\app\api\admin\pages\[id]\builder\route.ts            269     content.layoutDraft = layout;                   
+D:\connectbroadband-next\src\app\api\admin\theme\footer\route.ts                  100         where: { key: "footer_layout" },            
+D:\connectbroadband-next\src\app\api\admin\theme\footer\route.ts                  102           key: "footer_layout",                     
+D:\connectbroadband-next\src\app\api\admin\theme\footer\route.ts                  111         where: { key: "footer_layout_draft" },      
+D:\connectbroadband-next\src\app\api\admin\theme\header\route.ts                  105         where: { key: "header_layout" },            
+D:\connectbroadband-next\src\app\api\admin\theme\header\route.ts                  107           key: "header_layout",                     
+D:\connectbroadband-next\src\app\api\admin\theme\header\route.ts                  116         where: { key: "header_layout_draft" },      
+D:\connectbroadband-next\src\app\api\admin\theme\header-templates\route.ts         24       where: { key: "header_templates" },           
+D:\connectbroadband-next\src\app\api\admin\theme\header-templates\route.ts         68       where: { key: "header_templates" },           
+D:\connectbroadband-next\src\app\api\admin\theme\header-templates\route.ts         81       where: { key: "header_templates" },           
+D:\connectbroadband-next\src\app\api\admin\theme\header-templates\route.ts         83         key: "header_templates",                    
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                         70           in: ["header_layout", "footer_layout", ...
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                         88     let header = settingsByKey.get("header_layout...
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                        115       const templates = settingsByKey.get("header...
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                        137           footer: settingsByKey.get("footer_layou...
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                        232         key: "header_layout",                       
+D:\connectbroadband-next\src\app\api\public\theme\route.ts                        236         key: "header_layout",                       
+D:\connectbroadband-next\src\app\blog\[slug]\page.tsx                               9 import PublicPageBuilder from "@/components/publi...
+D:\connectbroadband-next\src\app\blog\[slug]\page.tsx                              84           <PublicPageBuilder layout={builderLayou...
+D:\connectbroadband-next\src\app\content\[type]\[slug]\page.tsx                    10 import PublicPageBuilder from "@/components/publi...
+D:\connectbroadband-next\src\app\content\[type]\[slug]\page.tsx                    93             <PublicPageBuilder layout={builderLay...
+D:\connectbroadband-next\src\app\[...slug]\page.tsx                                 8 import PublicPageBuilder from "@/components/publi...
+D:\connectbroadband-next\src\app\[...slug]\page.tsx                               267             <PublicPageBuilder layout={builderLay...
+D:\connectbroadband-next\src\components\admin\AdminLayout.tsx                      33   const isPageBuilder =                             
+D:\connectbroadband-next\src\components\admin\AdminLayout.tsx                      41   const builderMode = isPageBuilder || isHeaderFo...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      32   PageBuilderDevice,                                
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      33   PageBuilderElement,                               
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      34   PageBuilderElementType,                           
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      35   PageBuilderLayout,                                
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      36   PageBuilderStyles,                                
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      38 import styles from "./PageBuilder.module.css";      
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      52 const widgetTypes: PageBuilderElementType[] = [     
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      65 const emptyLayout: PageBuilderLayout = {            
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      72 function createId(type: PageBuilderElementType) {   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      97   type: PageBuilderElementType                      
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      98 ): PageBuilderElement {                             
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                      99   const element: PageBuilderElement = {             
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     202   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     204 ): PageBuilderElement | null {                      
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     220   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     222   updater: (element: PageBuilderElement) => PageB...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     223 ): PageBuilderElement[] {                           
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     243   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     245 ): PageBuilderElement[] {                           
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     262   element: PageBuilderElement,                      
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     274   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     276   child: PageBuilderElement                         
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     278   elements: PageBuilderElement[];                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     327   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     329   child: PageBuilderElement                         
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     331   elements: PageBuilderElement[];                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     377   elements: PageBuilderElement[],                   
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     378   child: PageBuilderElement                         
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     383 function getDeviceIcon(device: PageBuilderDevice) { 
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     395 const responsiveProperties: (keyof PageBuilderSty...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     417 export default function PageBuilder({ target }: P...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     444     useState<PageBuilderLayout>(emptyLayout);       
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     459     useState<PageBuilderDevice>("desktop");         
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     530           setLayout(result.layout as PageBuilderL...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     569         element: PageBuilderElement                 
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     570       ) => PageBuilderElement                       
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     586   function addElement(type: PageBuilderElementTyp...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     617       widgetTypes.includes(value as PageBuilderEl...
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     620         value as PageBuilderElementType             
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     759     type: PageBuilderElementType                    
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     831     property: keyof PageBuilderStyles,              
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     859     property: keyof PageBuilderStyles               
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     869     property: keyof PageBuilderStyles,              
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                     917     element: PageBuilderElement                     
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                    1268     elements: PageBuilderElement[],                 
+D:\connectbroadband-next\src\components\admin\PageBuilder.tsx                    1366       property: keyof PageBuilderStyles             
+D:\connectbroadband-next\src\components\admin\TemplateManager.tsx                  18 import styles from "./TemplateManager.module.css";  
+D:\connectbroadband-next\src\components\admin\TemplateManager.tsx                  42 export default function TemplateManager({ kind }:...
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                  5 import PageBuilder from "@/components/admin/PageB...
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                  8   UniversalBuilderKind,                             
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                  9   UniversalBuilderTarget,                           
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 12 type UniversalBuilderProps = {                      
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 13   target: UniversalBuilderTarget;                   
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 19   kind: UniversalBuilderKind;                       
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 21   const labels: Record<UniversalBuilderKind, stri...
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 96 export default function UniversalBuilder({          
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                 98 }: UniversalBuilderProps) {                         
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                129     return <PageBuilder target={{ kind: "page", i...
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                140     return <PageBuilder target={{ kind: "post", i...
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                146    * Existing PageBuilder API supports postTypeSlug.
+D:\connectbroadband-next\src\components\admin\UniversalBuilder.tsx                156       <PageBuilder                                  
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx                9   PageBuilderElement,                               
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx               10   PageBuilderLayout,                                
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx               11   PageBuilderStyles,                                
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              205   element: PageBuilderElement                       
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              267   styles: PageBuilderStyles | undefined             
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              359   element: PageBuilderElement                       
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              361   const extra = element as PageBuilderElement &     
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              459   element: PageBuilderElement,                      
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              492   element: PageBuilderElement                       
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              661 export default function PublicPageBuilder({         
+D:\connectbroadband-next\src\components\public\PublicPageBuilder.tsx              664   layout: PageBuilderLayout;                        
+D:\connectbroadband-next\src\lib\page-builder-content.ts                            2   PageBuilderElement,                               
+D:\connectbroadband-next\src\lib\page-builder-content.ts                            3   PageBuilderLayout,                                
+D:\connectbroadband-next\src\lib\page-builder-content.ts                            6 export function getBuilderLayout(content: unknown...
+D:\connectbroadband-next\src\lib\page-builder-content.ts                           37   function isElement(value: unknown, depth: numbe...
+D:\connectbroadband-next\src\lib\page-builder-content.ts                           69   return candidate as PageBuilderLayout;            
+D:\connectbroadband-next\src\lib\page-builder-types.ts                              2 export type PageBuilderDevice = "desktop" | "tabl...
+D:\connectbroadband-next\src\lib\page-builder-types.ts                              9 export type PageBuilderElementType =                
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             22 export type PageBuilderLength = string | number;    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             35 export type PageBuilderStyles = {                   
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             50   fontSize?: PageBuilderLength;                     
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             56   lineHeight?: PageBuilderLength;                   
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             57   letterSpacing?: PageBuilderLength;                
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             58   wordSpacing?: PageBuilderLength;                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             64   width?: PageBuilderLength;                        
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             65   height?: PageBuilderLength;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             66   minWidth?: PageBuilderLength;                     
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             67   maxWidth?: PageBuilderLength;                     
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             68   minHeight?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             69   maxHeight?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             72   margin?: PageBuilderLength;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             73   marginTop?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             74   marginRight?: PageBuilderLength;                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             75   marginBottom?: PageBuilderLength;                 
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             76   marginLeft?: PageBuilderLength;                   
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             79   padding?: PageBuilderLength;                      
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             80   paddingTop?: PageBuilderLength;                   
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             81   paddingRight?: PageBuilderLength;                 
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             82   paddingBottom?: PageBuilderLength;                
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             83   paddingLeft?: PageBuilderLength;                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             86   gap?: PageBuilderLength;                          
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             87   rowGap?: PageBuilderLength;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             88   columnGap?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             98   borderWidth?: PageBuilderLength;                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                             99   borderRadius?: PageBuilderLength;                 
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            114   top?: PageBuilderLength;                          
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            115   right?: PageBuilderLength;                        
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            116   bottom?: PageBuilderLength;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            117   left?: PageBuilderLength;                         
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            125   flexBasis?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            155 export type PageBuilderResponsiveStyles =           
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            156   Partial<PageBuilderStyles>;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            158 export type PageBuilderResponsiveSettings = Partial<
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            159   Record<PageBuilderDevice, PageBuilderResponsive...
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            162 export type PageBuilderElement = {                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            164   type: PageBuilderElementType;                     
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            184   gap?: PageBuilderLength;                          
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            190   flexBasis?: PageBuilderLength;                    
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            200   styles?: PageBuilderStyles;                       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            203   responsive?: PageBuilderResponsiveSettings;       
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            206   visibility?: Partial<Record<PageBuilderDevice, ...
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            209   children?: PageBuilderElement[];                  
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            212 export type PageBuilderLayout = {                   
+D:\connectbroadband-next\src\lib\page-builder-types.ts                            214   elements: PageBuilderElement[];                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                         2 export type UniversalBuilderKind =                  
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                        11 export type UniversalBuilderDevice = "desktop" | ...
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                        13 export type UniversalBuilderStatus = "draft" | "p...
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       191 export type UniversalBuilderLayout = {              
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       196 export type UniversalBuilderTarget = {              
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       197   kind: UniversalBuilderKind;                       
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       204 export type UniversalBuilderDocument = {            
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       206   kind: UniversalBuilderKind;                       
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       208   status: UniversalBuilderStatus;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       210   layout: UniversalBuilderLayout;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       221 export type UniversalBuilderSavePayload = {         
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       222   target: UniversalBuilderTarget;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       223   layout: UniversalBuilderLayout;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       224   status?: UniversalBuilderStatus;                  
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       228 export type UniversalBuilderHistoryEntry = {        
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       232   status: UniversalBuilderStatus;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       233   layout: UniversalBuilderLayout;                   
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       237   UniversalBuilderKind,                             
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       249 export const UNIVERSAL_BUILDER_DEVICES: Universal...
+D:\connectbroadband-next\src\lib\universal-builder-types.ts                       281 export function createEmptyUniversalLayout(): Uni...
+
+

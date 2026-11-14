@@ -1,69 +1,89 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { Suspense } from "react";
+import { connection } from "next/server";
+import PublicLayout from "@/components/public/PublicLayout";
+import CMSPageView from "@/components/public/CMSPageView";
+import PublicPostView from "@/components/public/PublicPostView";
+import PublicPostsListing from "@/components/public/PublicPostsListing";
+import { prisma } from "@/lib/prisma";
+import { getSiteSettings } from "@/lib/site-settings";
 
-export default function Home() {
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default function Home({ searchParams }: Props) {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <Suspense fallback={null}>
+      <HomeContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function HomeContent({ searchParams }: Props) {
+  await connection();
+  const [settings, query] = await Promise.all([getSiteSettings(), searchParams]);
+  const postId = typeof query.p === "string" ? query.p : "";
+
+  if (postId) {
+    const post = await prisma.post.findFirst({
+      where: {
+        id: postId,
+        status: "PUBLISHED",
+        deletedAt: null,
+        postTypeId: null,
+      },
+      include: {
+        categories: {
+          include: { category: { select: { name: true, slug: true } } },
+        },
+        tags: {
+          include: { tag: { select: { name: true, slug: true, imageUrl: true } } },
+        },
+      },
+    });
+
+    if (post) {
+      return (
+        <PublicLayout>
+          <PublicPostView post={post} settings={settings} />
+        </PublicLayout>
+      );
+    }
+  }
+
+  if (
+    settings.reading.showOnFront === "page" &&
+    settings.reading.homepagePageId
+  ) {
+    const page = await prisma.page.findFirst({
+      where: {
+        id: settings.reading.homepagePageId,
+        status: "PUBLISHED",
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        seoTitle: true,
+        seoDescription: true,
+        content: true,
+      },
+    });
+
+    if (page) {
+      return (
+        <PublicLayout>
+          <CMSPageView page={page} />
+        </PublicLayout>
+      );
+    }
+  }
+
+  return (
+    <PublicLayout>
+      <PublicPostsListing />
+    </PublicLayout>
   );
 }

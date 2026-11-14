@@ -1,0 +1,127 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 55%);
+}
+
+.dialog {
+  display: flex;
+  width: min(620px, 100%);
+  max-height: min(680px, 90vh);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(15 23 42 / 25%);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 22px 14px;
+}
+
+.header h2 {
+  margin: 0 0 5px;
+  color: #1e293b;
+  font-size: 17px;
+}
+
+.header p,
+.note {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.header button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.header button:hover {
+  background: #f1f5f9;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 22px 14px;
+  padding: 0 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #64748b;
+}
+
+.search input {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  outline: 0;
+  color: #1e293b;
+  background: transparent;
+  font: inherit;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding: 0 22px 16px;
+}
+
+.grid button {
+  display: flex;
+  min-height: 82px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  background: #fff;
+  cursor: pointer;
+}
+
+.grid button:hover,
+.grid button.selected {
+  border-color: #3984e8;
+  color: #0c2f55;
+  background: #eff6ff;
+}
+
+.grid button span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+
+.note {
+  padding: 12px 22px 18px;
+  border-top: 1px solid #e2e8f0;
+}
