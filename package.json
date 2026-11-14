@@ -1,11 +1,10 @@
-
 {
   "name": "connectbroadband-next",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "prisma generate --schema=prisma/schema.prisma && next dev",
-    "build": "prisma generate --schema=prisma/postgres/schema.prisma && next build",
+    "build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "eslint",
     "db:generate:mysql": "prisma generate --schema=prisma/schema.prisma",
