@@ -1,6 +1,8 @@
-
 import { spawnSync } from "node:child_process";
-import { loadEnvConfig } from "@next/env";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { loadEnvConfig } = require("@next/env");
 
 const isProductionDeployment =
   process.env.VERCEL === "1" &&
