@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -78,16 +77,12 @@ export default function NewPage() {
         }
 
         if (active) {
-          setParentPages(
-            Array.isArray(result.pages) ? result.pages : []
-          );
+          setParentPages(Array.isArray(result.pages) ? result.pages : []);
         }
       } catch (err) {
         if (active) {
           setError(
-            err instanceof Error
-              ? err.message
-              : "Unable to load parent pages."
+            err instanceof Error ? err.message : "Unable to load parent pages.",
           );
         }
       } finally {
@@ -117,13 +112,9 @@ export default function NewPage() {
     setSlug(createSlug(value));
   }
 
-  const selectedParent = parentPages.find(
-    (page) => page.id === parentId
-  );
+  const selectedParent = parentPages.find((page) => page.id === parentId);
 
-  const cleanSlug = slug
-    .replace(/^\/+|\/+$/g, "")
-    .trim();
+  const cleanSlug = slug.replace(/^\/+|\/+$/g, "").trim();
 
   const permalink = selectedParent
     ? `${selectedParent.permalink.replace(/\/+$/, "")}/${cleanSlug}/`
@@ -182,9 +173,7 @@ export default function NewPage() {
     cursor: "pointer",
   };
 
-  async function handleImageUpload(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
+  async function handleImageUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -192,11 +181,7 @@ export default function NewPage() {
     setError("");
     setNotice("");
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-    ];
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(file.type)) {
       setError("Only JPG, PNG and WEBP images are allowed.");
@@ -230,11 +215,7 @@ export default function NewPage() {
       setFeaturedImage(result.image);
       setNotice("Featured image uploaded successfully.");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to upload image."
-      );
+      setError(err instanceof Error ? err.message : "Unable to upload image.");
     } finally {
       setUploading(false);
       event.target.value = "";
@@ -305,20 +286,19 @@ export default function NewPage() {
 
       if (openBuilder) {
         const pageId = result.page?.id;
+
         if (!pageId) {
-          throw new Error("Page was saved, but its builder URL could not be determined.");
+          throw new Error(
+            "Page was saved, but its builder URL could not be determined.",
+          );
         }
-        router.push(`/admin/builder/pages/${pageId}`);
+
+        window.location.assign(`/admin/builder/pages/${pageId}`);
       } else {
-        router.push("/admin/pages");
+        window.location.assign("/admin/pages");
       }
-      router.refresh();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong."
-      );
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setSaving(false);
     }
@@ -489,9 +469,7 @@ export default function NewPage() {
                 padding: 14,
               }}
               value={title}
-              onChange={(event) =>
-                handleTitleChange(event.target.value)
-              }
+              onChange={(event) => handleTitleChange(event.target.value)}
               placeholder="Enter page title"
               required
             />
@@ -532,18 +510,13 @@ export default function NewPage() {
                 data-form-type="other"
                 style={inputStyle}
                 value={slug}
-                onChange={(event) =>
-                  setSlug(createSlug(event.target.value))
-                }
+                onChange={(event) => setSlug(createSlug(event.target.value))}
                 placeholder="about-us"
               />
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <label
-                htmlFor="new-page-description"
-                style={labelStyle}
-              >
+              <label htmlFor="new-page-description" style={labelStyle}>
                 Short Description
               </label>
 
@@ -557,9 +530,7 @@ export default function NewPage() {
                   resize: "vertical",
                 }}
                 value={description}
-                onChange={(event) =>
-                  setDescription(event.target.value)
-                }
+                onChange={(event) => setDescription(event.target.value)}
                 placeholder="Enter a short page description"
               />
             </div>
@@ -582,16 +553,14 @@ export default function NewPage() {
                 Page Content
               </h2>
 
-              <span className="muted-text">
-                Visual / Code Editor
-              </span>
+              <span className="muted-text">Visual / Code Editor</span>
             </div>
 
             <TinyMcePageEditor ref={editorRef} />
 
             <p className="muted-text" style={{ marginBottom: 0 }}>
-              Use Visual mode to format content and Code mode to edit
-              HTML. Use the Image button to upload images into your page.
+              Use Visual mode to format content and Code mode to edit HTML. Use
+              the Image button to upload images into your page.
             </p>
           </section>
 
@@ -613,9 +582,7 @@ export default function NewPage() {
                 autoComplete="off"
                 style={inputStyle}
                 value={seoTitle}
-                onChange={(event) =>
-                  setSeoTitle(event.target.value)
-                }
+                onChange={(event) => setSeoTitle(event.target.value)}
                 placeholder="Enter SEO title"
               />
 
@@ -625,10 +592,7 @@ export default function NewPage() {
             </div>
 
             <div style={{ marginBottom: 15 }}>
-              <label
-                htmlFor="new-page-seo-description"
-                style={labelStyle}
-              >
+              <label htmlFor="new-page-seo-description" style={labelStyle}>
                 SEO Description
               </label>
 
@@ -642,9 +606,7 @@ export default function NewPage() {
                   resize: "vertical",
                 }}
                 value={seoDescription}
-                onChange={(event) =>
-                  setSeoDescription(event.target.value)
-                }
+                onChange={(event) => setSeoDescription(event.target.value)}
                 placeholder="Enter SEO meta description"
               />
 
@@ -654,10 +616,7 @@ export default function NewPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="new-page-focus-keyword"
-                style={labelStyle}
-              >
+              <label htmlFor="new-page-focus-keyword" style={labelStyle}>
                 Focus Keyword
               </label>
 
@@ -667,9 +626,7 @@ export default function NewPage() {
                 autoComplete="off"
                 style={inputStyle}
                 value={focusKeyword}
-                onChange={(event) =>
-                  setFocusKeyword(event.target.value)
-                }
+                onChange={(event) => setFocusKeyword(event.target.value)}
                 placeholder="Enter focus keyword"
               />
             </div>
@@ -723,11 +680,7 @@ export default function NewPage() {
                 marginBottom: 9,
               }}
             >
-              {saving ? (
-                <Loader2 size={15} />
-              ) : (
-                <Save size={15} />
-              )}
+              {saving ? <Loader2 size={15} /> : <Save size={15} />}
               Save Draft
             </button>
 
@@ -741,11 +694,7 @@ export default function NewPage() {
                 width: "100%",
               }}
             >
-              {saving ? (
-                <Loader2 size={15} />
-              ) : (
-                <Globe size={15} />
-              )}
+              {saving ? <Loader2 size={15} /> : <Globe size={15} />}
               {saving ? "Saving..." : "Publish Page"}
             </button>
           </section>
@@ -810,14 +759,10 @@ export default function NewPage() {
                 )}
 
                 <strong style={{ fontSize: 13 }}>
-                  {uploading
-                    ? "Uploading..."
-                    : "Upload Featured Image"}
+                  {uploading ? "Uploading..." : "Upload Featured Image"}
                 </strong>
 
-                <small className="muted-text">
-                  JPG, PNG, WEBP · Max 5 MB
-                </small>
+                <small className="muted-text">JPG, PNG, WEBP · Max 5 MB</small>
 
                 <input
                   type="file"
@@ -846,15 +791,11 @@ export default function NewPage() {
               name="new_page_parent"
               style={inputStyle}
               value={parentId}
-              onChange={(event) =>
-                setParentId(event.target.value)
-              }
+              onChange={(event) => setParentId(event.target.value)}
               disabled={loadingParents}
             >
               <option value="">
-                {loadingParents
-                  ? "Loading pages..."
-                  : "None — Top Level Page"}
+                {loadingParents ? "Loading pages..." : "None — Top Level Page"}
               </option>
 
               {parentPages.map((page) => (
@@ -880,17 +821,17 @@ export default function NewPage() {
             </h2>
 
             <p className="muted-text" style={{ margin: 0 }}>
-              Revision history and Duplicate Page will be connected
-              through the Edit Page workflow.
+              Revision history and Duplicate Page will be connected through the
+              Edit Page workflow.
             </p>
           </section>
 
           <div className="editor-tip">
             <strong>Editor tip</strong>
             <br />
-            Use Visual mode for normal content editing and Code mode
-            for HTML. Save Draft to keep the page unpublished, or
-            Publish Page to publish it.
+            Use Visual mode for normal content editing and Code mode for HTML.
+            Save Draft to keep the page unpublished, or Publish Page to publish
+            it.
           </div>
         </aside>
       </div>
