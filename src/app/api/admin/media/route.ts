@@ -1,4 +1,4 @@
-
+﻿
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import path from "path";
@@ -13,7 +13,7 @@ import {
   rename,
 } from "fs/promises";
 import type { Prisma } from "@prisma/client";
-import sanitizeHtml from "sanitize-html";
+import { head, del } from "@vercel/blob";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -85,112 +85,46 @@ type UploadMetadata = {
   totalChunks: number;
 };
 
+function jsonError(message: string, status = 400) {
+  return NextResponse.json({ success: false, message }, { status });
+}
+
 async function authorize() {
   const user = await getCurrentUser();
-
-  if (!user || !user.isActive) {
-    return null;
-  }
-
-  return user;
+  return user && user.isActive ? user : null;
 }
 
-function jsonError(message: string, status = 400) {
-  return NextResponse.json(
-    { success: false, message },
-    { status }
-  );
+function getExtension(name: string) {
+  return path.extname(name).replace(".", "").toLowerCase();
 }
 
-function getExtension(fileName: string) {
-  return path.extname(fileName).replace(".", "").toLowerCase();
-}
-
-function safeFileName(fileName: string) {
-  return path
-    .basename(fileName)
+function safeFileName(name: string) {
+  return path.basename(name.replace(/\\/g, "/"))
     .replace(/[\0-\x1f\x7f]/g, "")
     .trim();
 }
 
-function sanitizeFileName(fileName: string) {
-  const extension = getExtension(fileName);
+function sanitizeFileName(name: string) {
+  const extension = getExtension(name);
+  const base = path.basename(name, path.extname(name));
 
-  const originalBase = path.basename(
-    fileName,
-    path.extname(fileName)
-  );
-
-  // Remove date and timestamp suffixes from filenames.
-  // Examples:
-  // ChatGPT-Image-Apr-17-2026-04_44_41-PM
-  // Company-Logo-2026-11-06
-  const timestampPattern =
-    /(?:[-_](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[-_]\d{1,2}[-_]\d{4}|[-_]\d{4}[-_]\d{2}[-_]\d{2})(?:[-_]\d{1,2}[-_]\d{2}(?:[-_]\d{2})?(?:[-_](?:AM|PM))?)?$/i;
-
-  const cleanBase = originalBase.replace(timestampPattern, "");
-
-  const safeBase = cleanBase
+  const cleanBase = base
     .normalize("NFKC")
     .trim()
     .replace(/\s+/g, "-")
     .replace(/[^\p{L}\p{N}_-]/gu, "-")
     .replace(/-+/g, "-")
     .replace(/^[-.]+|[-.]+$/g, "")
-    .slice(0, 150);
+    .slice(0, 150) || "media";
 
-  const finalBase = safeBase || "media";
-
-  return extension
-    ? `${finalBase}.${extension}`
-    : finalBase;
+  return extension ? `${cleanBase}.${extension}` : cleanBase;
 }
 
-/**
- * Generates a unique readable filename.
- * Example: image.png, image-1.png, image-2.png
- */
-async function getUniqueFileName(
-  originalName: string,
-  ignorePath?: string
-) {
-  const sanitizedName = sanitizeFileName(originalName);
-
-  const extension = path.extname(sanitizedName);
-  const baseName = path.basename(sanitizedName, extension);
-
-  let candidate = sanitizedName;
-  let counter = 1;
-
-  while (true) {
-    const candidatePath = path.join(UPLOAD_DIR, candidate);
-
-    if (
-      ignorePath &&
-      path.resolve(candidatePath) === path.resolve(ignorePath)
-    ) {
-      return candidate;
-    }
-
-    try {
-      await access(candidatePath);
-      candidate = `${baseName}-${counter}${extension}`;
-      counter++;
-    } catch {
-      return candidate;
-    }
-  }
+function getMimeType(extension: string, supplied = "") {
+  return MIME_BY_EXTENSION[extension] || supplied || "application/octet-stream";
 }
 
-function getMimeType(extension: string, suppliedMime = "") {
-  return (
-    MIME_BY_EXTENSION[extension] ||
-    suppliedMime ||
-    "application/octet-stream"
-  );
-}
-
-function serializeMedia(item: Prisma.MediaAssetGetPayload<{}>) {
+function serializeMedia(item: Prisma.MediaAssetGetPayload<object>) {
   return {
     id: item.id,
     fileName: item.fileName,
@@ -208,145 +142,99 @@ function serializeMedia(item: Prisma.MediaAssetGetPayload<{}>) {
   };
 }
 
+function isBlobUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname.endsWith(".public.blob.vercel-storage.com") &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getSafeStoredPath(filePath: string) {
+  let decoded: string;
+
+  try {
+    decoded = decodeURIComponent(filePath);
+  } catch {
+    throw new Error("Invalid encoded media path.");
+  }
+
+  if (/^https?:\/\//i.test(decoded)) {
+    throw new Error("Remote media cannot be accessed as a local file.");
+  }
+
+  const relative = decoded.replace(/^[/\\]+/, "");
+  const resolved = path.resolve(process.cwd(), "public", relative);
+  const root = path.resolve(UPLOAD_DIR) + path.sep;
+
+  if (!resolved.startsWith(root)) {
+    throw new Error("Invalid media file path.");
+  }
+
+  return resolved;
+}
+
 async function ensureDirectories() {
   await mkdir(UPLOAD_DIR, { recursive: true });
   await mkdir(TEMP_DIR, { recursive: true });
 }
 
-function getSafeStoredPath(filePath: string) {
-  let decodedPath = filePath;
+async function getUniqueFileName(originalName: string, ignorePath?: string) {
+  const safeName = sanitizeFileName(originalName);
+  const extension = path.extname(safeName);
+  const base = path.basename(safeName, extension);
 
-  try {
-    decodedPath = decodeURIComponent(filePath);
-  } catch {
-    throw new Error("Invalid encoded media path.");
+  let candidate = safeName;
+  let counter = 1;
+
+  while (true) {
+    const candidatePath = path.join(UPLOAD_DIR, candidate);
+
+    if (
+      ignorePath &&
+      path.resolve(candidatePath) === path.resolve(ignorePath)
+    ) {
+      return candidate;
+    }
+
+    try {
+      await access(candidatePath);
+      candidate = `${base}-${counter}${extension}`;
+      counter++;
+    } catch {
+      return candidate;
+    }
   }
-
-  const relativePath = decodedPath.replace(/^[/\\]+/, "");
-
-  const resolvedPath = path.resolve(
-    process.cwd(),
-    "public",
-    relativePath
-  );
-
-  const allowedRoot = path.resolve(UPLOAD_DIR) + path.sep;
-
-  if (!resolvedPath.startsWith(allowedRoot)) {
-    throw new Error("Invalid media file path.");
-  }
-
-  return resolvedPath;
 }
 
-function isValidUploadId(uploadId: string) {
-  return /^[a-f0-9-]{36}$/i.test(uploadId);
+function isValidUploadId(id: string) {
+  return /^[a-f0-9-]{36}$/i.test(id);
 }
 
-async function removeUploadFolder(uploadId: string) {
-  if (!isValidUploadId(uploadId)) {
-    throw new Error("Invalid upload ID.");
-  }
+async function removeUploadFolder(id: string) {
+  if (!isValidUploadId(id)) throw new Error("Invalid upload ID.");
 
-  const folder = path.resolve(TEMP_DIR, uploadId);
-  const allowedRoot = path.resolve(TEMP_DIR) + path.sep;
+  const folder = path.resolve(TEMP_DIR, id);
+  const root = path.resolve(TEMP_DIR) + path.sep;
 
-  if (!folder.startsWith(allowedRoot)) {
-    throw new Error("Invalid upload folder.");
-  }
+  if (!folder.startsWith(root)) throw new Error("Invalid upload folder.");
 
   await rm(folder, { recursive: true, force: true });
 }
 
-async function getUploadMetadata(
-  uploadId: string
-): Promise<UploadMetadata> {
-  if (!isValidUploadId(uploadId)) {
-    throw new Error("Invalid upload ID.");
-  }
+async function getUploadMetadata(id: string): Promise<UploadMetadata> {
+  if (!isValidUploadId(id)) throw new Error("Invalid upload ID.");
 
-  const folder = path.join(TEMP_DIR, uploadId);
-  const metadataPath = path.join(folder, "metadata.json");
-  const raw = await readFile(metadataPath, "utf8");
-
-  return JSON.parse(raw) as UploadMetadata;
+  const file = path.join(TEMP_DIR, id, "metadata.json");
+  return JSON.parse(await readFile(file, "utf8")) as UploadMetadata;
 }
 
-function sanitizeSvg(content: string): string {
-  return sanitizeHtml(content, {
-    parser: {
-      xmlMode: true,
-      lowerCaseTags: false,
-      lowerCaseAttributeNames: false,
-    },
-    allowedTags: [
-      "svg", "g", "path", "circle", "rect", "line",
-      "polyline", "polygon", "ellipse", "defs",
-      "linearGradient", "radialGradient", "stop",
-      "clipPath", "mask", "pattern", "marker",
-      "symbol", "use", "title", "desc", "text", "tspan",
-      "filter", "feGaussianBlur", "feOffset", "feBlend",
-      "feColorMatrix", "feComposite", "feFlood",
-      "feMerge", "feMergeNode", "feMorphology",
-      "feTurbulence", "feDisplacementMap",
-    ],
-    allowedAttributes: {
-      "*": [
-        "id", "class", "fill", "fill-rule", "fill-opacity",
-        "stroke", "stroke-width", "stroke-linecap",
-        "stroke-linejoin", "stroke-opacity", "opacity",
-        "transform", "clip-path", "mask", "filter",
-        "offset", "stop-color", "stop-opacity",
-        "gradientUnits", "gradientTransform",
-        "spreadMethod", "xmlns", "xmlns:xlink",
-        "role", "aria-label",
-      ],
-      svg: [
-        "xmlns", "xmlns:xlink", "viewBox",
-        "width", "height", "version", "preserveAspectRatio",
-      ],
-      path: ["d", "pathLength"],
-      circle: ["cx", "cy", "r"],
-      rect: ["x", "y", "width", "height", "rx", "ry"],
-      line: ["x1", "y1", "x2", "y2"],
-      polyline: ["points"],
-      polygon: ["points"],
-      ellipse: ["cx", "cy", "rx", "ry"],
-      stop: ["offset", "stop-color", "stop-opacity"],
-      use: ["href", "xlink:href"],
-      linearGradient: [
-        "x1", "y1", "x2", "y2",
-        "gradientUnits", "gradientTransform",
-      ],
-      radialGradient: [
-        "cx", "cy", "r", "fx", "fy",
-        "gradientUnits", "gradientTransform",
-      ],
-      text: ["x", "y", "dx", "dy", "text-anchor", "font-size"],
-      tspan: ["x", "y", "dx", "dy"],
-      feGaussianBlur: ["in", "stdDeviation"],
-      feOffset: ["in", "dx", "dy"],
-      feBlend: ["in", "in2", "mode"],
-      feColorMatrix: ["type", "values"],
-      feComposite: ["in", "in2", "operator", "k1", "k2", "k3", "k4"],
-      feFlood: ["flood-color", "flood-opacity"],
-      feMergeNode: ["in"],
-      feMorphology: ["operator", "radius"],
-      feTurbulence: ["type", "baseFrequency", "numOctaves", "seed"],
-      feDisplacementMap: [
-        "in", "in2", "scale", "xChannelSelector", "yChannelSelector",
-      ],
-    },
-    allowedSchemes: [],
-    allowedSchemesAppliedToAttributes: ["href", "xlink:href"],
-    allowProtocolRelative: false,
-    disallowedTagsMode: "discard",
-  });
-}
-
-/**
- * Migrates existing UUID filenames to readable filenames.
- */
 async function migrateExistingMedia() {
   const items = await prisma.mediaAsset.findMany({
     orderBy: { createdAt: "asc" },
@@ -354,54 +242,50 @@ async function migrateExistingMedia() {
 
   let migrated = 0;
   let skipped = 0;
-
   const errors: string[] = [];
 
   for (const item of items) {
+    if (isBlobUrl(item.filePath)) {
+      skipped++;
+      continue;
+    }
+
     try {
       const oldPath = getSafeStoredPath(item.filePath);
-
       await access(oldPath);
 
-      const newFileName = await getUniqueFileName(
+      const newName = await getUniqueFileName(
         item.originalName || item.fileName,
         oldPath
       );
 
-      const newPath = path.join(UPLOAD_DIR, newFileName);
+      const newPath = path.join(UPLOAD_DIR, newName);
 
       if (path.resolve(oldPath) === path.resolve(newPath)) {
         skipped++;
         continue;
       }
 
-      // Rename physical file first.
       await rename(oldPath, newPath);
 
       try {
-        // Update database only after successful rename.
         await prisma.mediaAsset.update({
           where: { id: item.id },
           data: {
-            fileName: newFileName,
-            filePath: `/uploads/media/${encodeURIComponent(newFileName)}`,
+            fileName: newName,
+            filePath: `/uploads/media/${encodeURIComponent(newName)}`,
           },
         });
-
         migrated++;
-      } catch (databaseError) {
-        // Roll back physical rename if database update fails.
+      } catch (error) {
         await rename(newPath, oldPath).catch(() => undefined);
-        throw databaseError;
+        throw error;
       }
     } catch (error) {
       skipped++;
-
       errors.push(
         `${item.originalName}: ${
-          error instanceof Error
-            ? error.message
-            : "Migration failed"
+          error instanceof Error ? error.message : "Migration failed"
         }`
       );
     }
@@ -417,24 +301,13 @@ async function migrateExistingMedia() {
   };
 }
 
-/**
- * GET: Media Library and Trash
- */
 export async function GET(request: NextRequest) {
   try {
     const user = await authorize();
-
-    if (!user) {
-      return jsonError("Unauthorized access.", 401);
-    }
+    if (!user) return jsonError("Unauthorized access.", 401);
 
     const { searchParams } = new URL(request.url);
-
-    const view =
-      searchParams.get("view") === "trash"
-        ? "trash"
-        : "library";
-
+    const view = searchParams.get("view") === "trash" ? "trash" : "library";
     const search = (searchParams.get("search") || "").trim();
     const type = searchParams.get("type") || "all";
 
@@ -454,13 +327,10 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (type === "image") {
-      where.mimeType = { startsWith: "image/" };
-    } else if (type === "video") {
-      where.mimeType = { startsWith: "video/" };
-    } else if (type === "audio") {
-      where.mimeType = { startsWith: "audio/" };
-    } else if (type === "document") {
+    if (type === "image") where.mimeType = { startsWith: "image/" };
+    else if (type === "video") where.mimeType = { startsWith: "video/" };
+    else if (type === "audio") where.mimeType = { startsWith: "audio/" };
+    else if (type === "document") {
       where.NOT = [
         { mimeType: { startsWith: "image/" } },
         { mimeType: { startsWith: "video/" } },
@@ -486,21 +356,100 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * POST: Chunked upload and filename migration.
- */
 export async function POST(request: NextRequest) {
   try {
     const originError = verifyRequestOrigin(request);
-
-    if (originError) {
-      return originError;
-    }
+    if (originError) return originError;
 
     const user = await authorize();
+    if (!user) return jsonError("Unauthorized access.", 401);
 
-    if (!user) {
-      return jsonError("Unauthorized access.", 401);
+    const contentType = request.headers.get("content-type") || "";
+
+    // JSON registration is handled BEFORE any local filesystem operation.
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      const action = String(body.action || "");
+
+      if (action !== "register-blob") {
+        return jsonError("Invalid JSON media action.");
+      }
+
+      const url = typeof body.url === "string" ? body.url : "";
+      const pathname = typeof body.pathname === "string" ? body.pathname : "";
+      const originalName = safeFileName(
+        typeof body.originalName === "string" ? body.originalName : ""
+      );
+
+      if (!isBlobUrl(url)) return jsonError("Invalid Vercel Blob URL.");
+
+      const extension = getExtension(originalName);
+      if (!ALLOWED_EXTENSIONS.has(extension)) {
+        return jsonError(`File type .${extension} is not allowed.`);
+      }
+
+      if (!pathname || !pathname.startsWith("media/") || pathname.includes("..")) {
+        return jsonError("Invalid Blob pathname.");
+      }
+
+      const blobInfo = await head(url);
+
+      if (blobInfo.url !== url || blobInfo.pathname !== pathname) {
+        return jsonError("Blob URL and pathname do not match.");
+      }
+
+      if (
+        !Number.isSafeInteger(blobInfo.size) ||
+        blobInfo.size <= 0 ||
+        blobInfo.size > MAX_FILE_SIZE
+      ) {
+        return jsonError("Uploaded file size is invalid.");
+      }
+
+      const expectedMime = getMimeType(extension);
+
+      if (blobInfo.contentType && blobInfo.contentType !== expectedMime) {
+        return jsonError("Uploaded file content type does not match its extension.");
+      }
+
+      const fileName = path.posix.basename(pathname);
+
+      const existing = await prisma.mediaAsset.findFirst({
+        where: { filePath: url },
+      });
+
+      if (existing) {
+        return NextResponse.json({
+          success: true,
+          message: "File is already registered.",
+          media: serializeMedia(existing),
+        });
+      }
+
+      const media = await prisma.mediaAsset.create({
+        data: {
+          fileName,
+          originalName,
+          mimeType: expectedMime,
+          fileSize: BigInt(blobInfo.size),
+          filePath: url,
+          title: originalName,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "File uploaded successfully.",
+        media: serializeMedia(media),
+      });
+    }
+
+    // The old chunk system is for local development only.
+    if (process.env.VERCEL === "1") {
+      return jsonError(
+        "Production uploads must use the Vercel Blob multipart uploader.",
+        400
+      );
     }
 
     await ensureDirectories();
@@ -508,48 +457,31 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const action = String(formData.get("action") || "");
 
-    /**
-     * Migrate old UUID filenames.
-     */
     if (action === "migrate-existing") {
-      const result = await migrateExistingMedia();
-
-      return NextResponse.json(result);
+      return NextResponse.json(await migrateExistingMedia());
     }
 
-    /**
-     * Initialize upload.
-     */
     if (action === "init") {
       const originalName = safeFileName(
         String(formData.get("fileName") || "")
       );
-
       const size = Number(formData.get("size") || 0);
       const suppliedMime = String(formData.get("mimeType") || "");
       const extension = getExtension(originalName);
 
-      if (!originalName || !extension) {
-        return jsonError("Invalid file name.");
-      }
-
+      if (!originalName || !extension) return jsonError("Invalid file name.");
       if (!ALLOWED_EXTENSIONS.has(extension)) {
         return jsonError(`File type .${extension} is not allowed.`);
       }
-
-      if (
-        !Number.isSafeInteger(size) ||
-        size <= 0 ||
-        size > MAX_FILE_SIZE
-      ) {
+      if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_FILE_SIZE) {
         return jsonError("File size must be between 1 byte and 5 GB.");
       }
 
       const totalChunks = Math.ceil(size / CHUNK_SIZE);
       const uploadId = randomUUID();
-      const uploadFolder = path.join(TEMP_DIR, uploadId);
+      const folder = path.join(TEMP_DIR, uploadId);
 
-      await mkdir(uploadFolder, { recursive: true });
+      await mkdir(folder, { recursive: true });
 
       const metadata: UploadMetadata = {
         originalName,
@@ -560,7 +492,7 @@ export async function POST(request: NextRequest) {
       };
 
       await writeFile(
-        path.join(uploadFolder, "metadata.json"),
+        path.join(folder, "metadata.json"),
         JSON.stringify(metadata)
       );
 
@@ -572,9 +504,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    /**
-     * Upload individual chunk.
-     */
     if (action === "chunk") {
       const uploadId = String(formData.get("uploadId") || "");
       const chunkIndex = Number(formData.get("chunkIndex"));
@@ -608,31 +537,17 @@ export async function POST(request: NextRequest) {
         return jsonError("Chunk size does not match.");
       }
 
-      const chunkBuffer = Buffer.from(await chunk.arrayBuffer());
+      const buffer = Buffer.from(await chunk.arrayBuffer());
+      const chunkPath = path.join(TEMP_DIR, uploadId, `${chunkIndex}.part`);
 
-      const chunkPath = path.join(
-        TEMP_DIR,
-        uploadId,
-        `${chunkIndex}.part`
-      );
+      await writeFile(chunkPath, buffer);
 
-      await writeFile(chunkPath, chunkBuffer);
-
-      return NextResponse.json({
-        success: true,
-        chunkIndex,
-      });
+      return NextResponse.json({ success: true, chunkIndex });
     }
 
-    /**
-     * Complete upload.
-     */
     if (action === "complete") {
       const uploadId = String(formData.get("uploadId") || "");
-
-      if (!isValidUploadId(uploadId)) {
-        return jsonError("Invalid upload ID.");
-      }
+      if (!isValidUploadId(uploadId)) return jsonError("Invalid upload ID.");
 
       const metadata = await getUploadMetadata(uploadId);
 
@@ -645,33 +560,22 @@ export async function POST(request: NextRequest) {
         return jsonError("Invalid upload metadata.");
       }
 
-      const uploadFolder = path.join(TEMP_DIR, uploadId);
-
+      const folder = path.join(TEMP_DIR, uploadId);
       let finalPath = "";
 
       try {
-        const finalName = await getUniqueFileName(
-          metadata.originalName
-        );
-
+        const finalName = await getUniqueFileName(metadata.originalName);
         finalPath = path.join(UPLOAD_DIR, finalName);
 
         let assembledSize = 0;
 
         for (let index = 0; index < metadata.totalChunks; index++) {
-          const chunkPath = path.join(
-            uploadFolder,
-            `${index}.part`
-          );
-
+          const chunkPath = path.join(folder, `${index}.part`);
           const chunkBuffer = await readFile(chunkPath);
-
           assembledSize += chunkBuffer.length;
 
           if (index === 0) {
-            await writeFile(finalPath, chunkBuffer, {
-              flag: "wx",
-            });
+            await writeFile(finalPath, chunkBuffer, { flag: "wx" });
           } else {
             await appendFile(finalPath, chunkBuffer);
           }
@@ -679,17 +583,6 @@ export async function POST(request: NextRequest) {
 
         if (assembledSize !== metadata.size) {
           throw new Error("Uploaded file size does not match.");
-        }
-
-        if (metadata.extension === "svg") {
-          const rawSvg = await readFile(finalPath, "utf8");
-          const cleanSvg = sanitizeSvg(rawSvg);
-
-          if (!cleanSvg || !cleanSvg.includes("<svg")) {
-            throw new Error("Invalid SVG file.");
-          }
-
-          await writeFile(finalPath, cleanSvg, "utf8");
         }
 
         const media = await prisma.mediaAsset.create({
@@ -711,23 +604,14 @@ export async function POST(request: NextRequest) {
           media: serializeMedia(media),
         });
       } catch (error) {
-        if (finalPath) {
-          await unlink(finalPath).catch(() => undefined);
-        }
-
+        if (finalPath) await unlink(finalPath).catch(() => undefined);
         throw error;
       }
     }
 
-    /**
-     * Cancel upload.
-     */
     if (action === "cancel") {
       const uploadId = String(formData.get("uploadId") || "");
-
-      if (!isValidUploadId(uploadId)) {
-        return jsonError("Invalid upload ID.");
-      }
+      if (!isValidUploadId(uploadId)) return jsonError("Invalid upload ID.");
 
       await removeUploadFolder(uploadId);
 
@@ -740,96 +624,63 @@ export async function POST(request: NextRequest) {
     return jsonError("Invalid upload action.");
   } catch (error) {
     console.error("Media POST error:", error);
-
     return jsonError(
-      error instanceof Error
-        ? error.message
-        : "Media upload failed.",
+      error instanceof Error ? error.message : "Media upload failed.",
       500
     );
   }
 }
 
-/**
- * PATCH: Update details, trash and restore.
- */
 export async function PATCH(request: NextRequest) {
   try {
     const originError = verifyRequestOrigin(request);
-
-    if (originError) {
-      return originError;
-    }
+    if (originError) return originError;
 
     const user = await authorize();
-
-    if (!user) {
-      return jsonError("Unauthorized access.", 401);
-    }
+    if (!user) return jsonError("Unauthorized access.", 401);
 
     const body = await request.json();
     const action = String(body.action || "");
 
-    /**
-     * Update attachment details.
-     */
     if (action === "update") {
-      const id = typeof body.id === "string"
-        ? body.id.trim()
-        : "";
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!id) return jsonError("Media ID is required.");
 
-      if (!id) {
-        return jsonError("Media ID is required.");
-      }
+      const existing = await prisma.mediaAsset.findUnique({ where: { id } });
 
-      const existingMedia = await prisma.mediaAsset.findUnique({
-        where: { id },
-      });
-
-      if (!existingMedia || existingMedia.isDeleted) {
+      if (!existing || existing.isDeleted) {
         return jsonError("Media file not found.", 404);
       }
 
-      const altText =
-        typeof body.altText === "string"
-          ? body.altText.trim().slice(0, 500)
-          : "";
-
-      const title =
-        typeof body.title === "string"
-          ? body.title.trim().slice(0, 255)
-          : "";
-
-      const caption =
-        typeof body.caption === "string"
-          ? body.caption.trim().slice(0, 500)
-          : "";
-
-      const description =
-        typeof body.description === "string"
-          ? body.description.trim().slice(0, 10000)
-          : "";
-
-      const updatedMedia = await prisma.mediaAsset.update({
+      const updated = await prisma.mediaAsset.update({
         where: { id },
         data: {
-          altText: altText || null,
-          title: title || null,
-          caption: caption || null,
-          description: description || null,
+          altText:
+            typeof body.altText === "string"
+              ? body.altText.trim().slice(0, 500) || null
+              : null,
+          title:
+            typeof body.title === "string"
+              ? body.title.trim().slice(0, 255) || null
+              : null,
+          caption:
+            typeof body.caption === "string"
+              ? body.caption.trim().slice(0, 500) || null
+              : null,
+          description:
+            typeof body.description === "string"
+              ? body.description.trim().slice(0, 10000) || null
+              : null,
         },
       });
 
       return NextResponse.json({
         success: true,
         message: "Media details updated successfully.",
-        media: serializeMedia(updatedMedia),
+        media: serializeMedia(updated),
       });
     }
 
-    /**
-     * Bulk trash / restore.
-     */
     const ids = Array.isArray(body.ids)
       ? body.ids.filter(
           (id: unknown): id is string =>
@@ -837,11 +688,8 @@ export async function PATCH(request: NextRequest) {
         )
       : [];
 
-    if (!ids.length) {
-      return jsonError("Select at least one file.");
-    }
-
-    if (!["trash", "restore"].includes(action)) {
+    if (!ids.length) return jsonError("Select at least one file.");
+    if (action !== "trash" && action !== "restore") {
       return jsonError("Invalid media action.");
     }
 
@@ -850,9 +698,7 @@ export async function PATCH(request: NextRequest) {
         id: { in: ids },
         isDeleted: action === "restore",
       },
-      data: {
-        isDeleted: action === "trash",
-      },
+      data: { isDeleted: action === "trash" },
     });
 
     return NextResponse.json({
@@ -869,22 +715,13 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-/**
- * DELETE: Permanently delete files from Trash.
- */
 export async function DELETE(request: NextRequest) {
   try {
     const originError = verifyRequestOrigin(request);
-
-    if (originError) {
-      return originError;
-    }
+    if (originError) return originError;
 
     const user = await authorize();
-
-    if (!user) {
-      return jsonError("Unauthorized access.", 401);
-    }
+    if (!user) return jsonError("Unauthorized access.", 401);
 
     const body = await request.json();
 
@@ -895,31 +732,25 @@ export async function DELETE(request: NextRequest) {
         )
       : [];
 
-    if (!ids.length) {
-      return jsonError("Select at least one file.");
-    }
+    if (!ids.length) return jsonError("Select at least one file.");
 
     const items = await prisma.mediaAsset.findMany({
-      where: {
-        id: { in: ids },
-        isDeleted: true,
-      },
+      where: { id: { in: ids }, isDeleted: true },
     });
 
-    if (!items.length) {
-      return jsonError("No trashed files were selected.");
-    }
+    if (!items.length) return jsonError("No trashed files were selected.");
 
+    // Delete storage objects first. Keep DB rows if a storage deletion fails.
     for (const item of items) {
-      const physicalPath = getSafeStoredPath(item.filePath);
+      if (isBlobUrl(item.filePath)) {
+        await del(item.filePath);
+      } else {
+        const physicalPath = getSafeStoredPath(item.filePath);
 
-      await unlink(physicalPath).catch(
-        (error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") {
-            throw error;
-          }
-        }
-      );
+        await unlink(physicalPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      }
     }
 
     const result = await prisma.mediaAsset.deleteMany({
@@ -936,9 +767,10 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error) {
     console.error("Media DELETE error:", error);
-
     return jsonError(
-      "Unable to permanently delete selected files.",
+      error instanceof Error
+        ? `Unable to permanently delete selected files: ${error.message}`
+        : "Unable to permanently delete selected files.",
       500
     );
   }

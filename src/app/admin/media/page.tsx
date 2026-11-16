@@ -38,6 +38,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+import { upload } from "@vercel/blob/client";
+
 import styles from "./MediaLibrary.module.css";
 
 type MediaItem = {
@@ -243,20 +245,65 @@ export default function MediaLibraryPage() {
   };
 
   const uploadSingleFile = async (
-    file: File,
-    uploadId: string
-  ): Promise<boolean> => {
-    let serverUploadId = "";
+  file: File,
+  uploadId: string
+): Promise<boolean> => {
+  let serverUploadId = "";
 
-    try {
+  try {
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+
+    if (file.size <= 0 || file.size > 5 * 1024 * 1024 * 1024) {
+      throw new Error("File size must be between 1 byte and 5 GB.");
+    }
+
+    if (process.env.NODE_ENV === "production") {
+      const blob = await upload(
+        `media/${file.name.replace(/[\\/]/g, "-")}`,
+        file,
+        {
+          access: "public",
+          handleUploadUrl: "/api/admin/media/upload",
+          multipart: true,
+          clientPayload: JSON.stringify({
+            originalName: file.name,
+            size: file.size,
+            mimeType: file.type,
+          }),
+          onUploadProgress: ({ percentage }) => {
+            updateUpload(uploadId, {
+              progress: Math.min(99, Math.round(percentage)),
+            });
+          },
+        }
+      );
+
+      const registerResponse = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "register-blob",
+          url: blob.url,
+          pathname: blob.pathname,
+          originalName: file.name,
+        }),
+      });
+
+      const registerResult = await registerResponse.json();
+
+      if (!registerResponse.ok || !registerResult.success) {
+        throw new Error(
+          registerResult.message || "Unable to register uploaded file."
+        );
+      }
+    } else {
       const initData = new FormData();
       initData.append("action", "init");
       initData.append("fileName", file.name);
       initData.append("size", String(file.size));
-      initData.append(
-        "mimeType",
-        file.type || "application/octet-stream"
-      );
+      initData.append("mimeType", file.type || "application/octet-stream");
 
       const initResponse = await fetch("/api/admin/media", {
         method: "POST",
@@ -266,12 +313,14 @@ export default function MediaLibraryPage() {
       const initResult = await initResponse.json();
 
       if (!initResponse.ok || !initResult.success) {
-        throw new Error(
-          initResult.message || "Upload could not start."
-        );
+        throw new Error(initResult.message || "Upload could not start.");
       }
 
       serverUploadId = initResult.uploadId;
+
+      if (!serverUploadId) {
+        throw new Error("Upload could not be initialized.");
+      }
 
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
@@ -286,25 +335,22 @@ export default function MediaLibraryPage() {
         chunkData.append("chunkIndex", String(index));
         chunkData.append("chunk", chunk, `${file.name}.part`);
 
-        const chunkResponse = await fetch("/api/admin/media", {
+        const response = await fetch("/api/admin/media", {
           method: "POST",
           body: chunkData,
         });
 
-        const chunkResult = await chunkResponse.json();
+        const result = await response.json();
 
-        if (!chunkResponse.ok || !chunkResult.success) {
+        if (!response.ok || !result.success) {
           throw new Error(
-            chunkResult.message ||
-              `Upload failed at chunk ${index + 1}.`
+            result.message || `Upload failed at chunk ${index + 1}.`
           );
         }
 
-        const progress = Math.round(
-          ((index + 1) / totalChunks) * 95
-        );
-
-        updateUpload(uploadId, { progress });
+        updateUpload(uploadId, {
+          progress: Math.round(((index + 1) / totalChunks) * 95),
+        });
       }
 
       const completeData = new FormData();
@@ -323,35 +369,35 @@ export default function MediaLibraryPage() {
           completeResult.message || "Unable to complete upload."
         );
       }
-
-      updateUpload(uploadId, {
-        progress: 100,
-        status: "completed",
-        message: "Uploaded successfully",
-      });
-
-      return true;
-    } catch (err) {
-      if (serverUploadId) {
-        const cancelData = new FormData();
-        cancelData.append("action", "cancel");
-        cancelData.append("uploadId", serverUploadId);
-
-        await fetch("/api/admin/media", {
-          method: "POST",
-          body: cancelData,
-        }).catch(() => undefined);
-      }
-
-      updateUpload(uploadId, {
-        status: "error",
-        message:
-          err instanceof Error ? err.message : "Upload failed.",
-      });
-
-      return false;
     }
-  };
+
+    updateUpload(uploadId, {
+      progress: 100,
+      status: "completed",
+      message: "Uploaded successfully",
+    });
+
+    return true;
+  } catch (err) {
+    if (serverUploadId) {
+      const cancelData = new FormData();
+      cancelData.append("action", "cancel");
+      cancelData.append("uploadId", serverUploadId);
+
+      await fetch("/api/admin/media", {
+        method: "POST",
+        body: cancelData,
+      }).catch(() => undefined);
+    }
+
+    updateUpload(uploadId, {
+      status: "error",
+      message: err instanceof Error ? err.message : "Upload failed.",
+    });
+
+    return false;
+  }
+};
 
   const uploadFiles = async (fileList: FileList | File[]) => {
     const files = Array.from(fileList);

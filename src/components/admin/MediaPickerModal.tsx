@@ -11,6 +11,8 @@ import {
 } from "react";
 import styles from "./MediaPickerModal.module.css";
 
+import { upload } from "@vercel/blob/client";
+
 export type MediaPickerItem = {
   id: string;
   fileName: string;
@@ -113,19 +115,58 @@ export default function MediaPickerModal({
     }
   }, [open, loadMedia]);
 
-  const uploadFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setError(`${file.name}: Please select an image file.`);
-      return;
-    }
+ const uploadFile = async (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    setError(`${file.name}: Please select an image file.`);
+    return;
+  }
 
-    let uploadId = "";
+  if (file.size <= 0 || file.size > 5 * 1024 * 1024 * 1024) {
+    setError(`${file.name}: Image must be between 1 byte and 5 GB.`);
+    return;
+  }
 
-    setUploading(true);
-    setUploadProgress(0);
-    setError("");
+  let uploadId = "";
 
-    try {
+  setUploading(true);
+  setUploadProgress(0);
+  setError("");
+
+  try {
+    if (process.env.NODE_ENV === "production") {
+      const blob = await upload(
+        `media/${file.name.replace(/[\\/]/g, "-")}`,
+        file,
+        {
+          access: "public",
+          handleUploadUrl: "/api/admin/media/upload",
+          multipart: true,
+          clientPayload: JSON.stringify({
+            originalName: file.name,
+            size: file.size,
+            mimeType: file.type,
+          }),
+          onUploadProgress: ({ percentage }) => {
+            setUploadProgress(Math.min(99, Math.round(percentage)));
+          },
+        }
+      );
+
+      const registerResponse = await fetch("/api/admin/media", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "register-blob",
+          url: blob.url,
+          pathname: blob.pathname,
+          originalName: file.name,
+        }),
+      });
+
+      await readResponse(registerResponse);
+    } else {
       const initForm = new FormData();
       initForm.append("action", "init");
       initForm.append("fileName", file.name);
@@ -146,20 +187,16 @@ export default function MediaPickerModal({
 
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const start = chunkIndex * CHUNK_SIZE;
+      for (let index = 0; index < totalChunks; index++) {
+        const start = index * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = file.slice(start, end);
 
         const chunkForm = new FormData();
         chunkForm.append("action", "chunk");
         chunkForm.append("uploadId", uploadId);
-        chunkForm.append("chunkIndex", String(chunkIndex));
-        chunkForm.append(
-          "chunk",
-          chunk,
-          `${file.name}.part${chunkIndex}`
-        );
+        chunkForm.append("chunkIndex", String(index));
+        chunkForm.append("chunk", chunk, `${file.name}.part${index}`);
 
         const chunkResponse = await fetch("/api/admin/media", {
           method: "POST",
@@ -169,7 +206,7 @@ export default function MediaPickerModal({
         await readResponse(chunkResponse);
 
         setUploadProgress(
-          Math.round(((chunkIndex + 1) / totalChunks) * 100)
+          Math.round(((index + 1) / totalChunks) * 100)
         );
       }
 
@@ -183,29 +220,30 @@ export default function MediaPickerModal({
       });
 
       await readResponse(completeResponse);
-
-      setUploadProgress(100);
-      setTab("library");
-      await loadMedia();
-    } catch (err) {
-      if (uploadId) {
-        const cancelForm = new FormData();
-        cancelForm.append("action", "cancel");
-        cancelForm.append("uploadId", uploadId);
-
-        await fetch("/api/admin/media", {
-          method: "POST",
-          body: cancelForm,
-        }).catch(() => undefined);
-      }
-
-      setError(
-        err instanceof Error ? err.message : "Image upload failed."
-      );
-    } finally {
-      setUploading(false);
     }
-  };
+
+    setUploadProgress(100);
+    setTab("library");
+    await loadMedia();
+  } catch (err) {
+    if (uploadId) {
+      const cancelForm = new FormData();
+      cancelForm.append("action", "cancel");
+      cancelForm.append("uploadId", uploadId);
+
+      await fetch("/api/admin/media", {
+        method: "POST",
+        body: cancelForm,
+      }).catch(() => undefined);
+    }
+
+    setError(
+      err instanceof Error ? err.message : "Image upload failed."
+    );
+  } finally {
+    setUploading(false);
+  }
+};
 
   const handleFiles = async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter((file) =>
