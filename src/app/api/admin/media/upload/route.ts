@@ -6,8 +6,6 @@ import path from "path";
 import { getCurrentUser } from "@/lib/auth/session";
 import { verifyRequestOrigin } from "@/lib/auth/request";
 
-export const runtime = "nodejs";
-
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
