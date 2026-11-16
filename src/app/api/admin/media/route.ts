@@ -13,7 +13,7 @@ import {
   rename,
 } from "fs/promises";
 import type { Prisma } from "@prisma/client";
-import DOMPurify from "isomorphic-dompurify";
+import sanitizeHtml from "sanitize-html";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -26,7 +26,7 @@ const CHUNK_SIZE = 8 * 1024 * 1024;
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = new Set([
-  "jpg", "jpeg", "png", "gif", "webp", "svg", "avif", "bmp", "ico",
+  "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "ico",
   "mp4", "webm", "mov", "m4v", "avi", "mkv", "mpeg", "mpg",
   "mp3", "wav", "ogg", "m4a", "aac", "flac",
   "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
@@ -40,7 +40,6 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   png: "image/png",
   gif: "image/gif",
   webp: "image/webp",
-  svg: "image/svg+xml",
   avif: "image/avif",
   bmp: "image/bmp",
   ico: "image/x-icon",
@@ -273,24 +272,75 @@ async function getUploadMetadata(
   return JSON.parse(raw) as UploadMetadata;
 }
 
-function sanitizeSvg(content: string) {
-  return DOMPurify.sanitize(content, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: [
-      "script",
-      "foreignObject",
-      "iframe",
-      "object",
-      "embed",
+function sanitizeSvg(content: string): string {
+  return sanitizeHtml(content, {
+    parser: {
+      xmlMode: true,
+      lowerCaseTags: false,
+      lowerCaseAttributeNames: false,
+    },
+    allowedTags: [
+      "svg", "g", "path", "circle", "rect", "line",
+      "polyline", "polygon", "ellipse", "defs",
+      "linearGradient", "radialGradient", "stop",
+      "clipPath", "mask", "pattern", "marker",
+      "symbol", "use", "title", "desc", "text", "tspan",
+      "filter", "feGaussianBlur", "feOffset", "feBlend",
+      "feColorMatrix", "feComposite", "feFlood",
+      "feMerge", "feMergeNode", "feMorphology",
+      "feTurbulence", "feDisplacementMap",
     ],
-    FORBID_ATTR: [
-      "onload",
-      "onclick",
-      "onerror",
-      "onmouseover",
-      "onfocus",
-      "onbegin",
-    ],
+    allowedAttributes: {
+      "*": [
+        "id", "class", "fill", "fill-rule", "fill-opacity",
+        "stroke", "stroke-width", "stroke-linecap",
+        "stroke-linejoin", "stroke-opacity", "opacity",
+        "transform", "clip-path", "mask", "filter",
+        "offset", "stop-color", "stop-opacity",
+        "gradientUnits", "gradientTransform",
+        "spreadMethod", "xmlns", "xmlns:xlink",
+        "role", "aria-label",
+      ],
+      svg: [
+        "xmlns", "xmlns:xlink", "viewBox",
+        "width", "height", "version", "preserveAspectRatio",
+      ],
+      path: ["d", "pathLength"],
+      circle: ["cx", "cy", "r"],
+      rect: ["x", "y", "width", "height", "rx", "ry"],
+      line: ["x1", "y1", "x2", "y2"],
+      polyline: ["points"],
+      polygon: ["points"],
+      ellipse: ["cx", "cy", "rx", "ry"],
+      stop: ["offset", "stop-color", "stop-opacity"],
+      use: ["href", "xlink:href"],
+      linearGradient: [
+        "x1", "y1", "x2", "y2",
+        "gradientUnits", "gradientTransform",
+      ],
+      radialGradient: [
+        "cx", "cy", "r", "fx", "fy",
+        "gradientUnits", "gradientTransform",
+      ],
+      text: ["x", "y", "dx", "dy", "text-anchor", "font-size"],
+      tspan: ["x", "y", "dx", "dy"],
+      feGaussianBlur: ["in", "stdDeviation"],
+      feOffset: ["in", "dx", "dy"],
+      feBlend: ["in", "in2", "mode"],
+      feColorMatrix: ["type", "values"],
+      feComposite: ["in", "in2", "operator", "k1", "k2", "k3", "k4"],
+      feFlood: ["flood-color", "flood-opacity"],
+      feMergeNode: ["in"],
+      feMorphology: ["operator", "radius"],
+      feTurbulence: ["type", "baseFrequency", "numOctaves", "seed"],
+      feDisplacementMap: [
+        "in", "in2", "scale", "xChannelSelector", "yChannelSelector",
+      ],
+    },
+    allowedSchemes: [],
+    allowedSchemesAppliedToAttributes: ["href", "xlink:href"],
+    allowProtocolRelative: false,
+    disallowedTagsMode: "discard",
   });
 }
 
