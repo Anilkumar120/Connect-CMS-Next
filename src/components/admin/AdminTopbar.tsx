@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 type AdminUser = {
@@ -21,6 +21,7 @@ type AdminUser = {
   name: string;
   username: string;
   email: string;
+  avatarUrl: string | null;
   role: string;
   isActive: boolean;
 };
@@ -49,6 +50,12 @@ export default function AdminTopbar({
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+
+  // Reset image error whenever the user's photo changes.
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user.avatarUrl]);
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -81,6 +88,37 @@ export default function AdminTopbar({
 
       setLoggingOut(false);
     }
+  };
+
+  // Reusable user profile image.
+  const ProfileAvatar = ({
+    size = 25,
+    className = "",
+  }: {
+    size?: number;
+    className?: string;
+  }) => {
+    if (user.avatarUrl && !avatarError) {
+      return (
+        <img
+          key={user.avatarUrl}
+          src={user.avatarUrl}
+          alt={`${user.name}'s profile`}
+          className={`admin-user-avatar-image ${className}`}
+          width={size}
+          height={size}
+          onError={() => setAvatarError(true)}
+        />
+      );
+    }
+
+    return (
+      <UserCircle
+        size={size}
+        className={className}
+        strokeWidth={1.7}
+      />
+    );
   };
 
   return (
@@ -142,7 +180,7 @@ export default function AdminTopbar({
             title="Account menu"
           >
             <span className="profile-avatar">
-              <UserCircle size={25} />
+              <ProfileAvatar size={25} />
             </span>
 
             <span className="profile-details">
@@ -168,7 +206,7 @@ export default function AdminTopbar({
               <div className="profile-dropdown-menu" role="menu">
                 <div className="profile-dropdown-header">
                   <div className="profile-dropdown-avatar">
-                    <UserCircle size={34} />
+                    <ProfileAvatar size={34} />
                   </div>
 
                   <div className="profile-dropdown-user">

@@ -13,6 +13,7 @@ type AdminUser = {
   email: string;
   role: string;
   isActive: boolean;
+  avatarUrl: string | null;
 };
 
 type AdminLayoutProps = {
@@ -29,7 +30,7 @@ export default function AdminLayout({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Hide admin sidebar and topbar only on actual visual builders.
+  // Hide sidebar and topbar only on actual visual builders.
   const isPageBuilder =
     /^\/admin\/builder\/(pages|posts)\/[^/]+\/?$/.test(pathname) ||
     /^\/admin\/builder\/custom\/[^/]+\/[^/]+\/?$/.test(pathname);

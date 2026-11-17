@@ -1,8 +1,10 @@
+
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -17,6 +19,7 @@ import {
   X,
   ChevronLeft,
 } from "lucide-react";
+
 import { adminMenu } from "./AdminMenu";
 
 type SidebarContentType = {
@@ -24,6 +27,13 @@ type SidebarContentType = {
   title: string;
   slug: string;
   icon: string;
+};
+
+type AdminSidebarProps = {
+  collapsed: boolean;
+  mobileOpen: boolean;
+  onClose: () => void;
+  onCollapse: () => void;
 };
 
 const contentTypeIcons = {
@@ -39,13 +49,6 @@ const contentTypeIcons = {
   Ticket,
 } as const;
 
-type AdminSidebarProps = {
-  collapsed: boolean;
-  mobileOpen: boolean;
-  onClose: () => void;
-  onCollapse: () => void;
-};
-
 export default function AdminSidebar({
   collapsed,
   mobileOpen,
@@ -53,27 +56,64 @@ export default function AdminSidebar({
   onCollapse,
 }: AdminSidebarProps) {
   const pathname = usePathname();
-  const [contentTypes, setContentTypes] = useState<SidebarContentType[]>([]);
 
+  const [contentTypes, setContentTypes] = useState<
+    SidebarContentType[]
+  >([]);
+
+  const [faviconError, setFaviconError] = useState(false);
+
+  // Load custom content types
   useEffect(() => {
     let active = true;
 
     async function loadContentTypes() {
       try {
-        const response = await fetch("/api/admin/content-types", {
-          cache: "no-store",
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-          throw new Error(result.message || "Unable to load custom post types.");
+        const response = await fetch(
+          "/api/admin/content-types",
+          {
+            cache: "no-store",
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        const contentType = response.headers.get("content-type") || "";
+
+        if (!contentType.includes("application/json")) {
+          const responseText = await response.text();
+
+          throw new Error(
+            `Content Types API returned non-JSON response (${response.status}): ${responseText.slice(0, 200)}`
+          );
         }
-        if (active) setContentTypes(result.contentTypes);
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(
+            result.message || "Unable to load custom post types."
+          );
+        }
+
+        if (active) {
+          setContentTypes(
+            Array.isArray(result.contentTypes)
+              ? result.contentTypes
+              : []
+          );
+        }
       } catch (error) {
-        console.error("Load sidebar content types error:", error);
+        console.error(
+          "Load sidebar content types error:",
+          error
+        );
       }
     }
 
     void loadContentTypes();
+
     return () => {
       active = false;
     };
@@ -82,7 +122,9 @@ export default function AdminSidebar({
   return (
     <>
       <div
-        className={`admin-sidebar-overlay ${mobileOpen ? "show" : ""}`}
+        className={`admin-sidebar-overlay ${
+          mobileOpen ? "show" : ""
+        }`}
         onClick={onClose}
       />
 
@@ -93,9 +135,29 @@ export default function AdminSidebar({
           mobileOpen ? "mobile-open" : "",
         ].join(" ")}
       >
+        {/* Sidebar Header */}
         <div className="admin-sidebar-header">
-          <Link href="/admin" className="admin-brand" onClick={onClose}>
-            <span className="admin-brand-icon">C</span>
+          <Link
+            href="/admin"
+            className="admin-brand"
+            onClick={onClose}
+            title="Connect CMS"
+          >
+            <span className="admin-brand-icon">
+              {!faviconError ? (
+                <img
+                  src="/favicon.ico"
+                  alt="Connect Broadband Favicon"
+                  className="admin-sidebar-favicon"
+                  onError={() => setFaviconError(true)}
+                />
+              ) : (
+                <span className="admin-brand-fallback">
+                  C
+                </span>
+              )}
+            </span>
+
             {!collapsed && (
               <span className="admin-brand-text">
                 CONNECT <strong>CMS</strong>
@@ -113,11 +175,15 @@ export default function AdminSidebar({
           </button>
         </div>
 
+        {/* Sidebar Menu */}
         <div className="admin-sidebar-menu">
           {adminMenu.map((item) => {
             if ("section" in item) {
               return (
-                <div className="admin-menu-section" key={item.section}>
+                <div
+                  className="admin-menu-section"
+                  key={item.section}
+                >
                   {!collapsed && item.section}
                 </div>
               );
@@ -128,6 +194,7 @@ export default function AdminSidebar({
                 ? pathname === "/admin"
                 : pathname === item.href ||
                   pathname.startsWith(`${item.href}/`);
+
             const Icon = item.icon;
 
             return (
@@ -141,10 +208,13 @@ export default function AdminSidebar({
                 <Link
                   href={item.href}
                   onClick={onClose}
-                  className={`admin-menu-link ${active ? "active" : ""}`}
+                  className={`admin-menu-link ${
+                    active ? "active" : ""
+                  }`}
                   title={collapsed ? item.title : undefined}
                 >
                   <Icon size={19} strokeWidth={1.8} />
+
                   {!collapsed && (
                     <span>{item.title}</span>
                   )}
@@ -152,40 +222,69 @@ export default function AdminSidebar({
               </div>
             );
           })}
-          {!collapsed && <div className="admin-menu-section">CUSTOM CONTENT</div>}
+
+          {/* Custom Content Types */}
+          {!collapsed && (
+            <div className="admin-menu-section">
+              CUSTOM CONTENT
+            </div>
+          )}
+
           {contentTypes.map((contentType) => {
             const ContentIcon =
               contentTypeIcons[
                 contentType.icon as keyof typeof contentTypeIcons
               ] || FileText;
+
             const href = `/admin/content-types/${contentType.slug}/posts`;
+
             const active =
-              pathname === href || pathname.startsWith(`${href}/`);
+              pathname === href ||
+              pathname.startsWith(`${href}/`);
 
             return (
               <Link
                 href={href}
                 key={contentType.id}
                 onClick={onClose}
-                className={`admin-menu-link ${active ? "active" : ""}`}
-                title={collapsed ? contentType.title : undefined}
+                className={`admin-menu-link ${
+                  active ? "active" : ""
+                }`}
+                title={
+                  collapsed ? contentType.title : undefined
+                }
               >
                 <ContentIcon size={19} strokeWidth={1.8} />
-                {!collapsed && <span>{contentType.title}</span>}
+
+                {!collapsed && (
+                  <span>{contentType.title}</span>
+                )}
               </Link>
             );
           })}
+
+          {/* Custom Post Types */}
           <Link
             href="/admin/content-types"
             onClick={onClose}
-            className={`admin-menu-link ${pathname === "/admin/content-types" ? "active" : ""}`}
-            title={collapsed ? "Custom Post Types" : undefined}
+            className={`admin-menu-link ${
+              pathname === "/admin/content-types"
+                ? "active"
+                : ""
+            }`}
+            title={
+              collapsed ? "Custom Post Types" : undefined
+            }
           >
             <Folder size={19} strokeWidth={1.8} />
-            {!collapsed && <span>Custom Post Types</span>}
+
+            {!collapsed && (
+              <span>Custom Post Types</span>
+            )}
           </Link>
         </div>
 
+        {/* Sidebar Footer */}
         <div className="admin-sidebar-footer">
           {!collapsed && (
             <div>
