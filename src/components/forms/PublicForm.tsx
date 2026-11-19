@@ -1,4 +1,4 @@
-
+﻿
 "use client";
 
 import {
@@ -15,6 +15,7 @@ type Props = {
   title: string;
   description: string;
   fields: FormField[];
+  settings?: unknown;
   styles: unknown;
   slug: string;
 };
@@ -27,11 +28,94 @@ const STRUCTURAL_FIELDS = [
   "section",
   "page-break",
 ];
+type PublicFieldPosition = {
+  columnStart: number;
+  columnWidth: number;
+  row: number;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Read settings.layout.rows while keeping Form.fields as the source of truth. */
+function getPublicFieldPositions(
+  fields: FormField[],
+  settings: unknown
+): Map<string, PublicFieldPosition> {
+  const positions = new Map<string, PublicFieldPosition>();
+  const fieldById = new Map(fields.map((field) => [field.id, field]));
+  const settingsObject = isPlainRecord(settings) ? settings : {};
+  const layout = isPlainRecord(settingsObject.layout) ? settingsObject.layout : null;
+  const rawRows = layout && Array.isArray(layout.rows) ? layout.rows : null;
+
+  // Older forms without a saved layout continue to display full-width fields.
+  if (!rawRows) {
+    fields.forEach((field, index) => {
+      positions.set(field.id, { columnStart: 1, columnWidth: 12, row: index + 1 });
+    });
+    return positions;
+  }
+
+  const allowedWidths = [3, 4, 6, 8, 9, 12];
+  const used = new Set<string>();
+  let rowOffset = 0;
+
+  for (const rawRow of rawRows) {
+    if (!isPlainRecord(rawRow)) continue;
+    const columns = Array.isArray(rawRow.columns) ? rawRow.columns : [];
+    let columnStart = 1;
+    let rowHeight = 0;
+
+    for (const rawColumn of columns) {
+      if (!isPlainRecord(rawColumn) || columnStart > 12) continue;
+      const rawWidth = Number(rawColumn.width);
+      const requestedWidth = allowedWidths.includes(rawWidth) ? rawWidth : 12;
+      const columnWidth = Math.max(1, Math.min(requestedWidth, 13 - columnStart));
+      const rawIds = Array.isArray(rawColumn.fieldIds) ? rawColumn.fieldIds : [];
+      let visibleIndex = 0;
+
+      for (const rawId of rawIds) {
+        if (typeof rawId !== "string" || used.has(rawId)) continue;
+        const field = fieldById.get(rawId);
+        if (!field) continue;
+        used.add(rawId);
+
+        // Hidden inputs do not take up a visible grid cell.
+        if (field.type === "hidden") {
+          positions.set(field.id, { columnStart, columnWidth, row: rowOffset + 1 });
+          continue;
+        }
+
+        positions.set(field.id, {
+          columnStart,
+          columnWidth,
+          row: rowOffset + visibleIndex + 1,
+        });
+        visibleIndex += 1;
+      }
+
+      rowHeight = Math.max(rowHeight, visibleIndex);
+      columnStart += columnWidth;
+    }
+
+    rowOffset += Math.max(1, rowHeight);
+  }
+
+  // Never hide fields if a saved layout is incomplete or from an older version.
+  fields.filter((field) => !used.has(field.id)).forEach((field) => {
+    rowOffset += 1;
+    positions.set(field.id, { columnStart: 1, columnWidth: 12, row: rowOffset });
+  });
+
+  return positions;
+}
 
 export default function PublicForm({
   title,
   description,
   fields,
+  settings,
   styles,
   slug,
 }: Props) {
@@ -73,6 +157,20 @@ export default function PublicForm({
       ? look.primaryColor
       : "#0c2f55";
 
+  const fieldPositions = getPublicFieldPositions(fields, settings);
+  const fieldGridStyle = (fieldId: string) => {
+    const position = fieldPositions.get(fieldId) ?? {
+      columnStart: 1,
+      columnWidth: 12,
+      row: 1,
+    };
+    return {
+      gridColumn: `${position.columnStart} / span ${position.columnWidth}`,
+      gridRow: String(position.row),
+      minWidth: 0,
+    };
+  };
+
   const setValue = (id: string, value: unknown) => {
     setValues((current) => ({
       ...current,
@@ -100,7 +198,9 @@ export default function PublicForm({
 
   const fieldContainerStyle = {
     display: "grid",
+    gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
     gap: 20,
+    alignItems: "start",
   };
 
   function handleInputChange(
@@ -322,7 +422,18 @@ export default function PublicForm({
           />
         </div>
 
-        <div style={fieldContainerStyle}>
+        <style>{`
+          @media (max-width: 640px) {
+            .public-form-fields-grid {
+              grid-template-columns: minmax(0, 1fr) !important;
+            }
+            .public-form-fields-grid > * {
+              grid-column: 1 / -1 !important;
+              grid-row: auto !important;
+            }
+          }
+        `}</style>
+        <div className="public-form-fields-grid" style={fieldContainerStyle}>
           {fields.map((field) => {
             const options = field.options ?? [];
 
@@ -342,6 +453,7 @@ export default function PublicForm({
                 <hr
                   key={field.id}
                   style={{
+                    ...fieldGridStyle(field.id),
                     width: "100%",
                     border: 0,
                     borderTop: "1px solid #e2e8f0",
@@ -353,7 +465,7 @@ export default function PublicForm({
 
             if (field.type === "section") {
               return (
-                <div key={field.id}>
+                <div key={field.id} style={fieldGridStyle(field.id)}>
                   <h2
                     style={{
                       margin: 0,
@@ -372,6 +484,7 @@ export default function PublicForm({
                 <hr
                   key={field.id}
                   style={{
+                    ...fieldGridStyle(field.id),
                     width: "100%",
                     border: 0,
                     borderTop: "2px dashed #ccd5e0",
@@ -386,6 +499,7 @@ export default function PublicForm({
                 <div
                   key={field.id}
                   style={{
+                    ...fieldGridStyle(field.id),
                     color: "#637286",
                     lineHeight: 1.6,
                   }}
@@ -408,7 +522,7 @@ export default function PublicForm({
             };
 
             return (
-              <div key={field.id}>
+              <div key={field.id} style={fieldGridStyle(field.id)}>
                 <label
                   htmlFor={field.id}
                   style={labelStyle}
@@ -894,7 +1008,7 @@ export default function PublicForm({
                           }
                         />
 
-                        {rating} ★
+                        {rating} â˜…
                       </label>
                     ))}
                   </div>
@@ -988,3 +1102,4 @@ export default function PublicForm({
     </section>
   );
 }
+

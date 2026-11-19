@@ -17,6 +17,15 @@ import PublicNavigationMenu, {
 import BuilderDynamicLink from "./BuilderDynamicLink";
 import BannerSlider, { type BannerSliderSlide } from "./BannerSlider";
 import { themeIcons } from "./theme-icons";
+import PublicShortcodeWidget from "./PublicShortcodeWidget";
+import PublicBuilderPosts from "./PublicBuilderPosts";
+import PublicBuilderPostTabs from "./PublicBuilderPostTabs";
+import PublicBuilderTabs from "./PublicBuilderTabs";
+import PublicCountdownWidget from "./PublicCountdownWidget";
+import PublicAnimatedHeadline from "./PublicAnimatedHeadline";
+import PublicShareButtons from "./PublicShareButtons";
+import PublicBuilderLoginForm from "./PublicBuilderLoginForm";
+import PublicPostNavigation from "./PublicPostNavigation";
 
 const imageUrl = (value: unknown) => safeUrl(value, true);
 
@@ -601,7 +610,19 @@ function layoutTag(node: BuilderNode) {
   }
 }
 
-function renderNode(node: BuilderNode): ReactNode {
+export type PublicBuilderPostContext = {
+  id: string;
+  title: string;
+  slug: string;
+  postTypeId?: string | null;
+  excerpt?: string | null;
+  contentHtml?: string;
+  featuredImage?: string | null;
+  publishedAt?: Date | null;
+  categories?: Array<{ name: string; slug: string }>;
+};
+
+function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
   const props = node.props;
@@ -637,11 +658,47 @@ function renderNode(node: BuilderNode): ReactNode {
           data-builder-layout-children={node.id}
           style={layoutChildrenStyle(node)}
         >
-          {children.map(renderNode)}
+          {children.map((child) => renderNode(child, postContext, postUrlPrefix))}
         </div>
       </Tag>
     );
   }
+  if (node.type === "post-title") {
+    const level = stringProp("htmlTag", "h1");
+    const Tag = /^h[1-6]$/.test(level) ? level as "h1" | "h2" | "h3" | "h4" | "h5" | "h6" : "h1";
+    return <Tag key={node.id} {...common}>{postContext?.title || stringProp("fallbackText", "Current Post Title")}</Tag>;
+  }
+  if (node.type === "post-content") {
+    const safeContent = sanitizeHtml(postContext?.contentHtml || stringProp("content"), { allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "figure", "figcaption", "table", "thead", "tbody", "tr", "th", "td", "video", "source"], allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, "*": ["class", "style"], a: ["href", "target", "rel"], img: ["src", "alt", "title", "width", "height", "loading"], video: ["src", "controls", "width", "height", "poster"], source: ["src", "type"] }, allowedSchemes: ["http", "https", "mailto", "tel"], allowProtocolRelative: false });
+    return <div key={node.id} {...common} dangerouslySetInnerHTML={{ __html: safeContent }} />;
+  }
+  if (node.type === "post-excerpt") {
+    const raw = postContext?.excerpt || stringProp("excerpt", "Current post excerpt will appear here.");
+    const words = Math.max(1, Math.min(500, Number(props.length || 30)));
+    const excerpt = raw.trim().split(/\s+/).slice(0, words).join(" ");
+    return <p key={node.id} {...common}>{excerpt}{raw.trim().split(/\s+/).length > words ? "…" : ""}</p>;
+  }
+  if (node.type === "featured-image") {
+    const src = imageUrl(postContext?.featuredImage || props.src || props.image);
+    return src ? <img key={node.id} {...common} src={src} alt={stringProp("alt", postContext?.title || "")} style={{ ...style, maxWidth: "100%", width: style.width || "100%", height: style.height || "auto", objectFit: stringProp("objectFit", "cover") as CSSProperties["objectFit"] }} /> : null;
+  }
+  if (node.type === "post-info") {
+    const parts: ReactNode[] = [];
+    if (props.showDate !== false && postContext?.publishedAt) parts.push(<time key="date" dateTime={postContext.publishedAt.toISOString()}>{postContext.publishedAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</time>);
+    if (props.showCategories !== false && postContext?.categories?.length) parts.push(<span key="categories">{postContext.categories.map((category) => category.name).join(", ")}</span>);
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexWrap: "wrap", gap: 10 }}>{parts.length ? parts : stringProp("fallbackText", "Post metadata")}</div>;
+  }
+  if (node.type === "author-box") {
+    const authorImage = imageUrl(props.authorImage);
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", gap: 14, alignItems: "center" }}>{props.showImage !== false && authorImage ? <img src={authorImage} alt={stringProp("authorName", "Author")} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }} /> : null}<div>{props.showName !== false ? <strong>{stringProp("authorName", "Author")}</strong> : null}{stringProp("authorRole") ? <div>{stringProp("authorRole")}</div> : null}{props.showBio !== false && stringProp("authorBio") ? <p>{stringProp("authorBio")}</p> : null}</div></div>;
+  }
+  if (node.type === "post-navigation" && postContext) {
+    return <PublicPostNavigation key={node.id} postId={postContext.id} postTypeId={postContext.postTypeId} publishedAt={postContext.publishedAt} prefix={postUrlPrefix} showPrevious={props.showPrevious !== false} showNext={props.showNext !== false} previousText={stringProp("previousText", "Previous Post")} nextText={stringProp("nextText", "Next Post")} />;
+  }
+  if (node.type === "archive-title") return <h1 key={node.id} {...common}>{stringProp("title", "Archive")}</h1>;
+  if (node.type === "archive-description") return <p key={node.id} {...common}>{stringProp("description")}</p>;
+  if (node.type === "pagination") return <nav key={node.id} {...common} aria-label="Pagination"><a href={stringProp("previousUrl", "?page=1")}>{stringProp("previousText", "Previous")}</a><span style={{ margin: "0 12px" }}>{stringProp("currentLabel", "Page")}</span><a href={stringProp("nextUrl", "?page=2")}>{stringProp("nextText", "Next")}</a></nav>;
+
   if (node.type === "heading") {
     const level = stringProp("level", "h2");
     const Tag = /^h[1-6]$/.test(level) ? (level as "h1" | "h2" | "h3" | "h4" | "h5" | "h6") : "h2";
@@ -721,19 +778,37 @@ function renderNode(node: BuilderNode): ReactNode {
   }
   if (node.type === "icon") {
     const Icon = themeIcons[stringProp("iconName")];
-    const src = imageUrl(props.src);
+    const src = imageUrl(props.iconImage || props.src);
+    const size = Math.max(8, Math.min(240, Number(props.size || 24)));
     return (
-      <span key={node.id} {...common} style={{ ...style, fontSize: Number(props.size || 24), color: stringProp("color", "#0c2f55") }}>
-        {src ? <img src={src} alt={stringProp("alt")} /> : Icon ? <Icon size={Number(props.size || 24)} /> : stringProp("symbol", "★")}
+      <span key={node.id} {...common} style={{ ...style, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size, color: stringProp("color", "#0c2f55") }}>
+        {src ? <img src={src} alt={stringProp("alt")} width={size} height={size} style={{ width: size, height: size, objectFit: "contain" }} /> : Icon ? <Icon size={size} strokeWidth={Number(props.strokeWidth || 2)} /> : stringProp("symbol", "★")}
       </span>
     );
   }
   if (node.type === "icon-box") {
     const position = stringProp("iconPosition", "top");
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column", alignItems: "center", gap: 12 }}>
-      <span>{stringProp("symbol", "★")}</span>
-      <div><h3>{stringProp("title")}</h3><p>{stringProp("description")}</p></div>
-    </div>;
+    const Icon = themeIcons[stringProp("iconName")];
+    const iconSrc = imageUrl(props.iconImage);
+    const iconSize = Math.max(12, Math.min(160, Number(props.iconSize || 40)));
+    const icon = iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: iconSize, height: iconSize, objectFit: "contain" }} /> : Icon ? <Icon size={iconSize} color={stringProp("iconColor", "#3984e8")} /> : <span style={{ fontSize: iconSize, color: stringProp("iconColor", "#3984e8") }}>{stringProp("symbol", "★")}</span>;
+    const content = <div><h3>{stringProp("title", "Feature Title")}</h3><p>{stringProp("description")}</p></div>;
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column", alignItems: position === "top" ? "center" : "flex-start", gap: 12 }}>{icon}{content}</div>;
+  }
+  if (node.type === "icon-list") {
+    const items = Array.isArray(props.items) ? props.items : [];
+    const iconSize = Math.max(8, Math.min(80, Number(props.iconSize || 16)));
+    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: stringProp("itemSpacing", "12px") }}>
+      {items.map((raw, index) => {
+        if (!raw || typeof raw !== "object") return null;
+        const item = raw as Record<string, unknown>;
+        const Icon = themeIcons[String(item.iconName || "Check")];
+        const iconSrc = imageUrl(item.iconImage);
+        const content = <><span style={{ display: "inline-flex", flex: "0 0 auto", color: stringProp("iconColor", "#3984e8") }}>{iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} /> : Icon ? <Icon size={iconSize} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>;
+        const href = safeUrl(item.url);
+        return <li key={String(item.id || index)} style={{ display: "flex", alignItems: "center", gap: 9, borderBottom: props.divider ? "1px solid #e2e8f0" : undefined, paddingBottom: props.divider ? 8 : undefined }}>{href && href !== "#" ? <a href={href} style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 9 }}>{content}</a> : content}</li>;
+      })}
+    </ul>;
   }
   if (node.type === "image-box") {
     const src = imageUrl(props.image);
@@ -792,6 +867,9 @@ function renderNode(node: BuilderNode): ReactNode {
         iconColor={stringProp("iconColor", "#0c2f55")}
         menuId={stringProp("menuId")}
         menuLocation={stringProp("menuLocation", "HEADER")}
+        menuItemStyles={props.menuItemStyles as import("./PublicNavigationMenu").ResponsiveMenuItemStyles}
+        mobilePanelBackground={stringProp("mobilePanelBackground", "#ffffff")}
+        mobilePanelColor={stringProp("mobilePanelColor", "#1f2937")}
       />
     );
   }
@@ -847,14 +925,17 @@ function renderNode(node: BuilderNode): ReactNode {
       </form>
     );
   }
-  if (node.type === "accordion" || node.type === "tabs") {
-    const itemsValue = node.type === "tabs" ? props.tabs : props.items;
-    const items = Array.isArray(itemsValue) ? itemsValue : [];
+  if (node.type === "accordion") {
+    const items = Array.isArray(props.items) ? props.items : [];
     return <div key={node.id} {...common}>{items.map((item, index) => {
       if (!item || typeof item !== "object") return null;
       const entry = item as Record<string, unknown>;
-      return <details key={String(entry.id || index)} open={node.type === "accordion" && Boolean(props.firstOpen) && index === 0}><summary>{String(entry.title || `Item ${index + 1}`)}</summary><div>{String(entry.content || "")}</div></details>;
+      return <details key={String(entry.id || index)} open={Boolean(props.firstOpen) && index === 0} style={{ borderBottom: `1px solid ${stringProp("dividerColor", "#e2e8f0")}`, padding: "10px 0", background: stringProp("titleBackground", "#f8fafc") }}><summary style={{ cursor: "pointer", fontWeight: 600, color: stringProp("titleColor", "#0c2f55") }}>{String(entry.title || `Item ${index + 1}`)}</summary><div style={{ padding: "10px 0", color: stringProp("contentColor", "#334155"), background: stringProp("contentBackground", "#ffffff") }}>{String(entry.content || "")}</div></details>;
     })}</div>;
+  }
+  if (node.type === "tabs") {
+    const items = Array.isArray(props.tabs) ? props.tabs : [];
+    return <PublicBuilderTabs key={node.id} items={items as Array<{id?: string; title?: string; content?: string}>} style={style} normalColor={stringProp("tabNormalColor", "#334155")} normalBackground={stringProp("tabNormalBackground", "#f1f5f9")} activeColor={stringProp("tabActiveColor", "#ffffff")} activeBackground={stringProp("tabActiveBackground", "#0c2f55")} hoverColor={stringProp("tabHoverColor")} hoverBackground={stringProp("tabHoverBackground")} />;
   }
   if (node.type === "toggle") return <details key={node.id} {...common} open={Boolean(props.open)}><summary>{stringProp("title", "Toggle")}</summary><div>{stringProp("content")}</div></details>;
   if (node.type === "counter") return <div key={node.id} {...common}><strong>{stringProp("prefix")}{String(props.end ?? 0)}{stringProp("suffix")}</strong><div>{stringProp("title")}</div></div>;
@@ -868,13 +949,18 @@ function renderNode(node: BuilderNode): ReactNode {
     return <div key={node.id} {...common}>{"★".repeat(rating)}{"☆".repeat(maximum - rating)}</div>;
   }
   if (node.type === "testimonial") return <blockquote key={node.id} {...common}><p>{stringProp("quote")}</p><strong>{stringProp("name")}</strong><small>{stringProp("role")}</small></blockquote>;
+  if (node.type === "flip-box") return <details key={node.id} {...common} style={{ ...style, border: "1px solid #e2e8f0", borderRadius: 10, padding: 18 }}><summary style={{ cursor: "pointer", listStyle: "none" }}><h3>{stringProp("frontTitle", "Front Title")}</h3><p>{stringProp("frontDescription")}</p><span>{stringProp("flipHint", "Click to view more")}</span></summary><div style={{ paddingTop: 14 }}><h3>{stringProp("backTitle", "Back Title")}</h3><p>{stringProp("backDescription")}</p>{stringProp("backButtonUrl") ? <a href={link(props.backButtonUrl)}>{stringProp("backButtonText", "Learn More")}</a> : null}</div></details>;
+  if (node.type === "countdown") return <PublicCountdownWidget key={node.id} date={stringProp("date")} showDays={props.showDays !== false} showHours={props.showHours !== false} showMinutes={props.showMinutes !== false} showSeconds={props.showSeconds !== false} expiredText={stringProp("expiredText", "The offer has ended.")} numberColor={stringProp("numberColor", "#ffffff")} labelColor={stringProp("labelColor", "#ffffff")} boxBackground={stringProp("boxBackground", "#0c2f55")} boxRadius={stringProp("boxRadius", "8px")} style={style} />;
+  if (node.type === "animated-headline") return <PublicAnimatedHeadline key={node.id} beforeText={stringProp("beforeText")} animatedText={Array.isArray(props.animatedText) ? props.animatedText.filter((item): item is string => typeof item === "string") : []} afterText={stringProp("afterText")} animation={stringProp("animation", "typing")} interval={Number(props.interval || 2400)} style={style} />;
+  if (node.type === "share-buttons") return <PublicShareButtons key={node.id} networks={Array.isArray(props.networks) ? props.networks.filter((item): item is string => typeof item === "string") : undefined} showLabels={Boolean(props.showLabels)} buttonSize={Number(props.buttonSize || 40)} iconSize={Number(props.iconSize || 18)} shape={stringProp("shape", "circle")} iconColor={stringProp("iconColor", "#ffffff")} backgroundColor={stringProp("backgroundColor", "#0c2f55")} style={style} />;
+
   if (node.type === "price-table") {
     const features = Array.isArray(props.features) ? props.features : [];
-    return <section key={node.id} {...common}><h3>{stringProp("title", "Plan")}</h3><strong>{stringProp("currency", "₹")}{stringProp("price", "0")}</strong><span> / {stringProp("period", "month")}</span><ul>{features.map((feature, index) => <li key={index}>{String(feature)}</li>)}</ul><a href={link(props.buttonUrl)}>{stringProp("buttonText", "Choose Plan")}</a></section>;
+    return <section key={node.id} {...common} style={{ ...style, border: `1px solid ${stringProp("cardBorderColor", "#dbe3ed")}`, borderRadius: "10px", padding: 22, background: stringProp("cardBackground", "#ffffff"), textAlign: "center" }}><h3 style={{ color: stringProp("titleColor", "#0c2f55") }}>{stringProp("title", "Plan")}</h3><strong style={{ color: stringProp("priceColor", "#3984e8"), fontSize: 30 }}>{stringProp("currency", "₹")}{stringProp("price", "0")}</strong><span> / {stringProp("period", "month")}</span><ul style={{ textAlign: "left" }}>{features.map((feature, index) => <li key={index}>{String(feature)}</li>)}</ul><a href={link(props.buttonUrl)} style={{ display: "inline-block", padding: "10px 16px", borderRadius: 6, textDecoration: "none", background: stringProp("buttonBackground", "#0c2f55"), color: stringProp("buttonColor", "#ffffff") }}>{stringProp("buttonText", "Choose Plan")}</a></section>;
   }
   if (node.type === "price-list") {
     const items = Array.isArray(props.items) ? props.items : [];
-    return <ul key={node.id} {...common}>{items.map((item, index) => <li key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</li>)}</ul>;
+    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>{items.map((item, index) => { const entry = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <li key={String(entry.id || index)} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}><span><strong>{String(entry.title || (typeof item === "string" ? item : `Item ${index + 1}`))}</strong>{entry.description ? <small style={{ display: "block" }}>{String(entry.description)}</small> : null}</span>{entry.price ? <strong>{String(entry.price)}</strong> : null}</li>; })}</ul>;
   }
   if (node.type === "call-to-action") return <section key={node.id} {...common}><h3>{stringProp("title")}</h3><p>{stringProp("description")}</p><a href={link(props.buttonUrl)}>{stringProp("buttonText", "Learn More")}</a></section>;
   if (node.type === "slides") {
@@ -948,16 +1034,23 @@ function renderNode(node: BuilderNode): ReactNode {
   }
   if (node.type === "social-icons") {
     const icons = Array.isArray(props.icons) ? props.icons : [];
-    return <div key={node.id} {...common}>{icons.map((icon, index) => {
+    const size = Math.max(12, Math.min(80, Number(props.iconSize || 22)));
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", alignItems: "center", flexWrap: "wrap", gap: stringProp("gap", "12px") }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;
-      return <a key={index} href={link(entry.url)} target="_blank" rel="noopener noreferrer">{String(entry.label || entry.name || "Social")}</a>;
+      const name = String(entry.iconName || entry.name || "");
+      const SocialIcon = themeIcons[name];
+      const iconImage = imageUrl(entry.iconImage);
+      const label = String(entry.label || entry.name || "Social");
+      const href = safeUrl(entry.url) || "#";
+      return <a key={String(entry.id || index)} href={href} aria-label={label} title={label} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: Number(props.buttonSize || 40), height: Number(props.buttonSize || 40), borderRadius: stringProp("shape", "circle") === "square" ? 4 : stringProp("shape", "circle") === "rounded" ? 10 : 999, color: stringProp("iconColor", "#ffffff"), background: stringProp("iconBackground", "#0c2f55"), textDecoration: "none" }}>{iconImage ? <img src={iconImage} alt="" width={size} height={size} /> : SocialIcon ? <SocialIcon size={size} /> : label.slice(0, 1).toUpperCase()}</a>;
     })}</div>;
   }
   if (node.type === "google-maps") {
     const address = encodeURIComponent(stringProp("address"));
     return address ? <iframe key={node.id} {...common} title="Map" loading="lazy" src={`https://www.google.com/maps?q=${address}&output=embed`} style={{ ...style, width: "100%", height: stringProp("height", "350px"), border: 0 }} /> : null;
   }
+  if (node.type === "login-form") return <PublicBuilderLoginForm key={node.id} usernameLabel={stringProp("usernameLabel", "Username or Email")} passwordLabel={stringProp("passwordLabel", "Password")} submitText={stringProp("submitText", "Log In")} rememberMe={props.rememberMe !== false} style={style} />;
   if (node.type === "form") {
     const fields = Array.isArray(props.fields) ? props.fields : [];
     return <form key={node.id} {...common}>{fields.map((field, index) => {
@@ -980,15 +1073,13 @@ function renderNode(node: BuilderNode): ReactNode {
     return <div key={node.id} {...common}>Lottie preview: {stringProp("url", "Select Lottie JSON")}</div>;
   }
   if (node.type === "shortcode") {
-    return <div key={node.id} {...common}>Shortcode: {stringProp("shortcode", "Enter shortcode")}</div>;
+    return <div key={node.id} {...common}><PublicShortcodeWidget code={stringProp("shortcode")} /></div>;
   }
-  if (node.type === "posts" || node.type === "loop-grid") {
-    const count = Math.min(6, Math.max(1, Number(props.count || 3)));
-    const columns = Math.min(12, Math.max(1, Number(props.columns || 3)));
-    return <div key={node.id} {...common} style={{ ...style, display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 12 }}>{Array.from({ length: count }, (_, index) => <article key={index} style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden", padding: 10 }}><div style={{ background: "#e2e8f0", height: 70, marginBottom: 8 }} /><strong>Post preview {index + 1}</strong><p style={{ fontSize: 12 }}>Dynamic post content preview.</p></article>)}</div>;
+  if (node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel") {
+    return <PublicBuilderPosts key={node.id} postType={stringProp("postType", "post")} count={Number(props.count || 6)} columns={Number(props.columns || 3)} category={stringProp("category")} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} imageHeight={stringProp("imageHeight", "180px")} cardBackground={stringProp("cardBackground", "#ffffff")} cardBorderColor={stringProp("cardBorderColor", "#e2e8f0")} cardRadius={stringProp("cardRadius", "8px")} gap={stringProp("gap", "18px")} layout={node.type === "loop-carousel" ? "carousel" : "grid"} className={className} style={style} />;
   }
-  if (node.type === "loop-carousel") {
-    return <div key={node.id} {...common}>{text(node)}</div>;
+  if (node.type === "post-tabs") {
+    return <PublicBuilderPostTabs key={node.id} postType={stringProp("postType", "post")} tabs={Array.isArray(props.tabs) ? props.tabs as Array<{id?: string; title?: string; categorySlug?: string}> : []} count={Number(props.count || 4)} columns={Number(props.columns || 2)} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} tabNormalColor={stringProp("tabNormalColor", "#334155")} tabNormalBackground={stringProp("tabNormalBackground", "#f1f5f9")} tabActiveColor={stringProp("tabActiveColor", "#ffffff")} tabActiveBackground={stringProp("tabActiveBackground", "#0c2f55")} tabHoverColor={stringProp("tabHoverColor")} tabHoverBackground={stringProp("tabHoverBackground")} gap={stringProp("gap", "16px")} imageHeight={stringProp("imageHeight", "150px")} cardBackground={stringProp("cardBackground", "#ffffff")} cardBorderColor={stringProp("cardBorderColor", "#e2e8f0")} cardRadius={stringProp("cardRadius", "8px")} style={style} />;
   }
 
   return <div key={node.id} {...common}>{text(node)}</div>;
@@ -1008,9 +1099,13 @@ function collectFontFamilies(
 export default function PublicBuilderDocument({
   layout,
   globalStyles,
+  postContext,
+  postUrlPrefix = "/blog",
 }: {
   layout: BuilderLayout;
   globalStyles?: BuilderGlobalStyles | null;
+  postContext?: PublicBuilderPostContext;
+  postUrlPrefix?: string;
 }) {
   const fontFamilies = new Set(
     (globalStyles?.fonts ?? [])
@@ -1076,7 +1171,7 @@ export default function PublicBuilderDocument({
         {responsiveStyles ? (
           <style>{responsiveStyles}</style>
         ) : null}
-        {layout.root.map(renderNode)}
+        {layout.root.map((node) => renderNode(node, postContext, postUrlPrefix))}
       </div>
     </>
   );

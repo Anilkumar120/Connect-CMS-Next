@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useCallback,
@@ -142,6 +142,8 @@ type LinkSuggestion = {
 
 type IconPickerTarget =
   | { kind: "button"; value: string }
+  | { kind: "widget"; value: string }
+  | { kind: "repeaterItem"; index: number; key: "items" | "icons"; value: string }
   | { kind: "slideButton"; slideIndex: number; buttonIndex: number; value: string }
   | null;
 
@@ -189,7 +191,8 @@ type MediaTarget =
   | "videoPoster"
   | "slideBackground"
   | "slideButtonIcon"
-  | "carouselItem";
+  | "carouselItem"
+  | "repeaterIcon";
 
 type BuilderMenuItem = {
   id: string;
@@ -1627,10 +1630,11 @@ function PreviewNode({
 
   if (node.type === "icon") {
     const Icon = themeIcons[String(props.iconName || "")];
-    if (props.src && typeof props.src === "string") {
+    const iconImage = typeof props.iconImage === "string" && props.iconImage ? props.iconImage : typeof props.src === "string" ? props.src : "";
+    if (iconImage) {
       return (
         <span {...commonProps} className={styles.previewIcon}>
-          <img src={safeMediaUrl(props.src)} alt={String(props.alt || "")} />
+          <img src={safeMediaUrl(iconImage)} alt={String(props.alt || "")} style={{ width: Number(props.size || 24), height: Number(props.size || 24), objectFit: "contain" }} />
         </span>
       );
     }
@@ -1647,6 +1651,11 @@ function PreviewNode({
         {Icon ? <Icon size={Number(props.size || 24)} /> : String(props.symbol || "★")}
       </span>
     );
+  }
+
+  if (node.type === "icon-list") {
+    const items = Array.isArray(props.items) ? props.items as Array<Record<string, unknown>> : [];
+    return <ul {...commonProps} style={{ ...inlineStyle, listStyle: "none", padding: 0, margin: 0, display: "grid", gap: String(props.itemSpacing || "10px") }}>{items.map((item, index) => { const ItemIcon = themeIcons[String(item.iconName || "Check")]; const iconImage = safeMediaUrl(String(item.iconImage || "")); const iconSize = Number(props.iconSize || 16); const content = <><span style={{ display: "inline-flex", alignItems: "center", color: String(props.iconColor || "#3984e8") }}>{iconImage ? <img src={iconImage} alt="" width={iconSize} height={iconSize} style={{ objectFit: "contain" }} /> : ItemIcon ? <ItemIcon size={iconSize} color={String(props.iconColor || "#3984e8")} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>; const href = String(item.url || "").trim(); return <li key={String(item.id || index)} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: props.divider ? "1px solid #e2e8f0" : undefined, paddingBottom: props.divider ? 8 : undefined }}>{href ? <a href={href} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "inherit", textDecoration: "none" }}>{content}</a> : content}</li>; })}</ul>;
   }
 
   if (node.type === "video") {
@@ -1709,7 +1718,7 @@ function PreviewNode({
           gap: 12,
         }}
       >
-        <div style={{ fontSize: 30 }}>{String(props.symbol || "★")}</div>
+        <div style={{ fontSize: 30, color: String(props.iconColor || "#3984e8") }}>{props.iconImage ? <img src={safeMediaUrl(String(props.iconImage))} alt="" style={{ width: Number(props.iconSize || 40), height: Number(props.iconSize || 40), objectFit: "contain" }} /> : (() => { const Icon = themeIcons[String(props.iconName || "")]; return Icon ? <Icon size={Number(props.iconSize || 40)} /> : String(props.symbol || "★"); })()}</div>
         <div>
           <h3>{String(props.title || "Title")}</h3>
           <p>{String(props.description || "")}</p>
@@ -1923,6 +1932,30 @@ function PreviewNode({
       );
     };
 
+    const menuItemStyles = props.menuItemStyles && typeof props.menuItemStyles === "object"
+      ? props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
+      : {};
+    const currentMenuStyles = menuItemStyles[device] || {};
+    const cssColor = (value: unknown) => typeof value === "string" && /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i.test(value) ? value : "";
+    const menuSelectorId = node.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const menuSelector = `[data-builder-node-id="${menuSelectorId}"]`;
+    const stateDeclarations = (state: Record<string, string> | undefined) => {
+      if (!state) return "";
+      const declarations = [
+        cssColor(state.color) ? `color:${cssColor(state.color)} !important` : "",
+        cssColor(state.backgroundColor) ? `background-color:${cssColor(state.backgroundColor)} !important` : "",
+      ].filter(Boolean);
+      return declarations.join(";");
+    };
+    const normalDeclarations = stateDeclarations(currentMenuStyles.normal);
+    const hoverDeclarations = stateDeclarations(currentMenuStyles.hover);
+    const activeDeclarations = stateDeclarations(currentMenuStyles.active);
+    const previewMenuCss = [
+      normalDeclarations ? `${menuSelector} a{${normalDeclarations}}` : "",
+      hoverDeclarations ? `${menuSelector} a:hover{${hoverDeclarations}}` : "",
+      activeDeclarations ? `${menuSelector} > ul > li:first-child > a{${activeDeclarations}}` : "",
+    ].filter(Boolean).join("\n");
+
     return (
       <nav
         {...commonProps}
@@ -1935,6 +1968,7 @@ function PreviewNode({
           width: inlineStyle.width || "max-content",
         }}
       >
+        {previewMenuCss ? <style>{previewMenuCss}</style> : null}
         <ul
           style={{
             display: "flex",
@@ -2425,19 +2459,12 @@ function PreviewNode({
   }
 
   if (node.type === "html") {
-    return (
-      <div className={styles.previewPlaceholder}>
-        HTML widget preview. Custom HTML is not executed in the editor canvas.
-      </div>
-    );
+    const htmlPreview = sanitizeHtml(String(props.html || ""), { allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "figure", "figcaption"], allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, "*": ["class", "style"], a: ["href", "target", "rel"], img: ["src", "alt", "title", "width", "height"] }, allowedSchemes: ["http", "https", "mailto", "tel"], allowProtocolRelative: false });
+    return <div {...commonProps} dangerouslySetInnerHTML={{ __html: htmlPreview || '<span style="color:#94a3b8">Paste HTML in Content tab</span>' }} />;
   }
 
   if (node.type === "shortcode") {
-    return (
-      <div className={styles.previewPlaceholder}>
-        Shortcode: {String(props.shortcode || "Enter shortcode")}
-      </div>
-    );
+    return <div {...commonProps} className={styles.previewPlaceholder}>Shortcode preview: {String(props.shortcode || "Enter [connect_form id=\"FORM_ID\"] in Content")}</div>;
   }
 
   if (node.type === "site-title") {
@@ -2953,6 +2980,7 @@ export default function UniversalBuilder({ target }: Props) {
   const [imageOpacityState, setImageOpacityState] = useState<"normal" | "hover">("normal");
   const [backgroundState, setBackgroundState] = useState<"normal" | "hover">("normal");
   const [textColorState, setTextColorState] = useState<"normal" | "hover">("normal");
+  const [menuItemState, setMenuItemState] = useState<"normal" | "hover" | "active">("normal");
   const [borderState, setBorderState] = useState<"normal" | "hover">("normal");
   const [transformState, setTransformState] = useState<"normal" | "hover">("normal");
 
@@ -3895,6 +3923,15 @@ export default function UniversalBuilder({ target }: Props) {
           };
         }
 
+        if (mediaTarget === "repeaterIcon" && mediaItemIndex !== null) {
+          const key = node.type === "social-icons" ? "icons" : "items";
+          const entries = Array.isArray(node.props[key]) ? [...(node.props[key] as unknown[])] : [];
+          const current = entries[mediaItemIndex];
+          const entry = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+          entries[mediaItemIndex] = { ...entry, iconImage: mediaUrl, iconMediaId: item.id, iconName: "" };
+          return { ...node, props: { ...node.props, [key]: entries } };
+        }
+
         if (mediaTarget === "videoPoster") {
           return {
             ...node,
@@ -4432,6 +4469,26 @@ export default function UniversalBuilder({ target }: Props) {
       while (buttons.length < 2) buttons.push(defaults[buttons.length]);
       return buttons;
     };
+    const repeaterKey = node.type === "tabs" ? "tabs" : node.type === "social-icons" ? "icons" : node.type === "icon-list" ? "items" : "items";
+    const repeaterItems = Array.isArray(node.props[repeaterKey])
+      ? (node.props[repeaterKey] as unknown[]).map((item) => item && typeof item === "object" ? item as Record<string, unknown> : {})
+      : [];
+    const updateRepeaterItem = (index: number, patch: Record<string, unknown>) => {
+      const next = [...repeaterItems];
+      next[index] = { ...(next[index] || {}), ...patch };
+      updateProps(repeaterKey, next);
+    };
+    const addRepeaterItem = () => {
+      const base = node.type === "social-icons"
+        ? { id: `social-${Date.now()}`, name: "Social", label: "Social", iconName: "Globe", url: "" }
+        : node.type === "icon-list"
+          ? { id: `icon-item-${Date.now()}`, text: "New list item", iconName: "Check", url: "" }
+          : node.type === "price-list"
+            ? { id: `price-${Date.now()}`, title: "Item", price: "", description: "" }
+            : { id: `item-${Date.now()}`, title: `Item ${repeaterItems.length + 1}`, content: "" };
+      updateProps(repeaterKey, [...repeaterItems, base]);
+    };
+    const removeRepeaterItem = (index: number) => updateProps(repeaterKey, repeaterItems.filter((_, i) => i !== index));
 
     return (
       <>
@@ -4524,6 +4581,37 @@ export default function UniversalBuilder({ target }: Props) {
                 style={CONTROL_STYLE}
               />
             </Field>
+          )}
+
+          {node.type === "html" && (
+            <>
+              <Field label="HTML Content">
+                <textarea
+                  rows={14}
+                  value={String(node.props.html || "")}
+                  onChange={(event) => updateProps("html", event.target.value)}
+                  placeholder={'<div class="custom-block">Your HTML here</div>'}
+                  spellCheck={false}
+                  style={{ ...CONTROL_STYLE, minHeight: 260, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}
+                />
+              </Field>
+              <p style={{ margin: "-4px 0 10px", color: "#64748b", fontSize: 12 }}>HTML markup is sanitized on the public website. Script tags and inline event handlers are removed for security.</p>
+            </>
+          )}
+
+          {node.type === "shortcode" && (
+            <>
+              <Field label="Shortcode">
+                <textarea
+                  rows={3}
+                  value={String(node.props.shortcode || "")}
+                  onChange={(event) => updateProps("shortcode", event.target.value)}
+                  placeholder={'[connect_form id="FORM_ID"]'}
+                  style={{ ...CONTROL_STYLE, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                />
+              </Field>
+              <p style={{ margin: "-4px 0 10px", color: "#64748b", fontSize: 12 }}>Supported registered shortcode: [connect_form id="FORM_ID"]. Use the form ID or public form slug.</p>
+            </>
           )}
 
           {node.type === "button" && (
@@ -4821,6 +4909,24 @@ export default function UniversalBuilder({ target }: Props) {
                   )}
                 </>
               )}
+              {node.type === "audio" && (
+                <>
+                  <TextControl label="Audio Title" value={String(node.props.title || "")} onChange={(value) => updateProps("title", value)} />
+                  {(["controls", "autoplay", "loop"] as const).map((key) => (
+                    <Field key={key} label={key[0].toUpperCase() + key.slice(1)}>
+                      <input type="checkbox" checked={key === "controls" ? node.props.controls !== false : Boolean(node.props[key])} onChange={(event) => updateProps(key, event.target.checked)} />
+                    </Field>
+                  ))}
+                </>
+              )}
+              {node.type === "lottie" && (
+                <>
+                  <Field label="Loop Animation"><input type="checkbox" checked={node.props.loop !== false} onChange={(event) => updateProps("loop", event.target.checked)} /></Field>
+                  <Field label="Autoplay"><input type="checkbox" checked={node.props.autoplay !== false} onChange={(event) => updateProps("autoplay", event.target.checked)} /></Field>
+                  <SelectControl label="Renderer" value={String(node.props.renderer || "svg")} options={["svg", "canvas", "html"].map((value) => ({ label: value.toUpperCase(), value }))} onChange={(value) => updateProps("renderer", value)} />
+                  <p style={{ color: "#64748b", fontSize: 12 }}>The URL must point to a Lottie JSON animation file. Public playback requires the Lottie player package to be configured in the site.</p>
+                </>
+              )}
             </>
           )}
 
@@ -4882,6 +4988,19 @@ export default function UniversalBuilder({ target }: Props) {
 
           {node.type === "icon-box" && (
             <>
+              <Field label="Icon Library">
+                <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
+                  {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
+                  {String(node.props.iconName || "Choose Icon")}
+                </button>
+              </Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+                <button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("widgetIcon")}><ImageIcon size={14} /> Media Library</button>
+                <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("widgetIcon")}><Upload size={14} /> Upload</button>
+              </div>
+              {node.props.iconImage ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><img src={safeMediaUrl(String(node.props.iconImage))} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} /><button type="button" style={BUTTON_STYLE} onClick={() => clearProps("iconImage", "iconImageId")}>Remove image</button></div> : null}
+              <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 40)} onChange={(value) => updateProps("iconSize", Number(value))} />
+              <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} />
               <TextControl
                 label="Icon Symbol"
                 value={String(node.props.symbol || "★")}
@@ -4985,6 +5104,79 @@ export default function UniversalBuilder({ target }: Props) {
               />
             </>
           )}
+          {node.type === "flip-box" && (
+            <ControlGroup title="Front & Back Content" defaultOpen>
+              <TextControl label="Front Title" value={String(node.props.frontTitle || "")} onChange={(value) => updateProps("frontTitle", value)} />
+              <Field label="Front Description"><textarea rows={3} value={String(node.props.frontDescription || "")} onChange={(event) => updateProps("frontDescription", event.target.value)} style={CONTROL_STYLE} /></Field>
+              <TextControl label="Back Title" value={String(node.props.backTitle || "")} onChange={(value) => updateProps("backTitle", value)} />
+              <Field label="Back Description"><textarea rows={3} value={String(node.props.backDescription || "")} onChange={(event) => updateProps("backDescription", event.target.value)} style={CONTROL_STYLE} /></Field>
+              <TextControl label="Flip Hint" value={String(node.props.flipHint || "Click to view more")} onChange={(value) => updateProps("flipHint", value)} />
+              <TextControl label="Button Text" value={String(node.props.backButtonText || "Learn More")} onChange={(value) => updateProps("backButtonText", value)} />
+              <TextControl label="Button URL" value={String(node.props.backButtonUrl || "#")} onChange={(value) => updateProps("backButtonUrl", value)} />
+            </ControlGroup>
+          )}
+
+          {node.type === "countdown" && (
+            <ControlGroup title="Countdown Settings" defaultOpen>
+              <Field label="Target Date & Time"><input type="datetime-local" value={String(node.props.date || "").slice(0, 16)} onChange={(event) => updateProps("date", event.target.value)} style={CONTROL_STYLE} /></Field>
+              {(["showDays", "showHours", "showMinutes", "showSeconds"] as const).map((key) => <Field key={key} label={`Show ${key.replace("show", "")}`}><input type="checkbox" checked={node.props[key] !== false} onChange={(event) => updateProps(key, event.target.checked)} /></Field>)}
+              <TextControl label="Expired Message" value={String(node.props.expiredText || "The offer has ended.")} onChange={(value) => updateProps("expiredText", value)} />
+            </ControlGroup>
+          )}
+
+          {node.type === "animated-headline" && (
+            <ControlGroup title="Headline Content" defaultOpen>
+              <TextControl label="Before Text" value={String(node.props.beforeText || "")} onChange={(value) => updateProps("beforeText", value)} />
+              <Field label="Animated Words (one per line)"><textarea rows={5} value={Array.isArray(node.props.animatedText) ? (node.props.animatedText as string[]).join("\n") : ""} onChange={(event) => updateProps("animatedText", event.target.value.split("\n").map((value) => value.trim()).filter(Boolean))} style={CONTROL_STYLE} /></Field>
+              <TextControl label="After Text" value={String(node.props.afterText || "")} onChange={(value) => updateProps("afterText", value)} />
+              <SelectControl label="Animation" value={String(node.props.animation || "typing")} options={[{ label: "Typing", value: "typing" }, { label: "Fade", value: "fade" }, { label: "Slide", value: "slide" }]} onChange={(value) => updateProps("animation", value)} />
+              <TextControl label="Change Interval (ms)" type="number" value={String(node.props.interval || 2400)} onChange={(value) => updateProps("interval", Number(value))} />
+            </ControlGroup>
+          )}
+
+          {node.type === "share-buttons" && (
+            <ControlGroup title="Share Networks" defaultOpen>
+              {(["facebook", "x", "linkedin", "whatsapp", "copy"] as const).map((network) => {
+                const networks = Array.isArray(node.props.networks) ? node.props.networks as string[] : [];
+                return <Field key={network} label={network === "x" ? "X / Twitter" : network[0].toUpperCase() + network.slice(1)}><input type="checkbox" checked={networks.includes(network)} onChange={(event) => updateProps("networks", event.target.checked ? [...networks, network] : networks.filter((item) => item !== network))} /></Field>;
+              })}
+              <Field label="Show Text Labels"><input type="checkbox" checked={Boolean(node.props.showLabels)} onChange={(event) => updateProps("showLabels", event.target.checked)} /></Field>
+              <SelectControl label="Button Shape" value={String(node.props.shape || "circle")} options={["circle", "rounded", "square"].map((value) => ({ label: value, value }))} onChange={(value) => updateProps("shape", value)} />
+            </ControlGroup>
+          )}
+
+          {node.type === "price-table" && (
+            <ControlGroup title="Pricing Content" defaultOpen>
+              <TextControl label="Plan Title" value={String(node.props.title || "Basic Plan")} onChange={(value) => updateProps("title", value)} />
+              <TextControl label="Currency" value={String(node.props.currency || "₹")} onChange={(value) => updateProps("currency", value)} />
+              <TextControl label="Price" value={String(node.props.price || "")} onChange={(value) => updateProps("price", value)} />
+              <TextControl label="Billing Period" value={String(node.props.period || "month")} onChange={(value) => updateProps("period", value)} />
+              <Field label="Features (one per line)"><textarea rows={7} value={Array.isArray(node.props.features) ? (node.props.features as string[]).join("\n") : ""} onChange={(event) => updateProps("features", event.target.value.split("\n").map((value) => value.trim()).filter(Boolean))} style={CONTROL_STYLE} /></Field>
+              <TextControl label="Button Text" value={String(node.props.buttonText || "Choose Plan")} onChange={(value) => updateProps("buttonText", value)} />
+              <TextControl label="Button URL" value={String(node.props.buttonUrl || "#")} onChange={(value) => updateProps("buttonUrl", value)} />
+              <Field label="Featured Plan"><input type="checkbox" checked={Boolean(node.props.featured)} onChange={(event) => updateProps("featured", event.target.checked)} /></Field>
+            </ControlGroup>
+          )}
+
+          {node.type === "login-form" && (
+            <ControlGroup title="Login Form Content" defaultOpen>
+              <TextControl label="Username Label" value={String(node.props.usernameLabel || "Username or Email")} onChange={(value) => updateProps("usernameLabel", value)} />
+              <TextControl label="Password Label" value={String(node.props.passwordLabel || "Password")} onChange={(value) => updateProps("passwordLabel", value)} />
+              <TextControl label="Submit Button Text" value={String(node.props.submitText || "Log In")} onChange={(value) => updateProps("submitText", value)} />
+              <Field label="Show Remember Me"><input type="checkbox" checked={node.props.rememberMe !== false} onChange={(event) => updateProps("rememberMe", event.target.checked)} /></Field>
+            </ControlGroup>
+          )}
+
+          {node.type === "post-excerpt" && <TextControl label="Excerpt Word Count" type="number" value={String(node.props.length || 30)} onChange={(value) => updateProps("length", Math.max(1, Math.min(500, Number(value) || 30)))} />}
+          {node.type === "post-title" && <><SelectControl label="HTML Tag" value={String(node.props.htmlTag || "h1")} options={["h1", "h2", "h3", "h4", "h5", "h6"].map((value) => ({ label: value.toUpperCase(), value }))} onChange={(value) => updateProps("htmlTag", value)} /><TextControl label="Fallback Text" value={String(node.props.fallbackText || "Current Post Title")} onChange={(value) => updateProps("fallbackText", value)} /></>}
+          {node.type === "post-content" && <p style={{ color: "#64748b", fontSize: 12 }}>Automatically displays the current post content. For security, embedded scripts are removed.</p>}
+          {node.type === "featured-image" && <TextControl label="Image Alt Text" value={String(node.props.alt || "")} onChange={(value) => updateProps("alt", value)} />}
+          {node.type === "post-info" && <>{(["showDate", "showAuthor", "showCategories", "showComments"] as const).map((key) => <Field key={key} label={`Show ${key.replace("show", "")}`}><input type="checkbox" checked={node.props[key] !== false} onChange={(event) => updateProps(key, event.target.checked)} /></Field>)}<TextControl label="Fallback Text" value={String(node.props.fallbackText || "Post metadata")} onChange={(value) => updateProps("fallbackText", value)} /></>}
+          {node.type === "author-box" && <><TextControl label="Author Name" value={String(node.props.authorName || "Author")} onChange={(value) => updateProps("authorName", value)} /><TextControl label="Author Role" value={String(node.props.authorRole || "")} onChange={(value) => updateProps("authorRole", value)} /><Field label="Author Biography"><textarea rows={4} value={String(node.props.authorBio || "")} onChange={(event) => updateProps("authorBio", event.target.value)} style={CONTROL_STYLE} /></Field><TextControl label="Author Image URL" value={String(node.props.authorImage || "")} onChange={(value) => updateProps("authorImage", value)} /><Field label="Show Image"><input type="checkbox" checked={node.props.showImage !== false} onChange={(event) => updateProps("showImage", event.target.checked)} /></Field><Field label="Show Name"><input type="checkbox" checked={node.props.showName !== false} onChange={(event) => updateProps("showName", event.target.checked)} /></Field><Field label="Show Biography"><input type="checkbox" checked={node.props.showBio !== false} onChange={(event) => updateProps("showBio", event.target.checked)} /></Field></>}
+          {node.type === "post-navigation" && <><TextControl label="Previous Label" value={String(node.props.previousText || "Previous Post")} onChange={(value) => updateProps("previousText", value)} /><TextControl label="Next Label" value={String(node.props.nextText || "Next Post")} onChange={(value) => updateProps("nextText", value)} /><Field label="Show Previous"><input type="checkbox" checked={node.props.showPrevious !== false} onChange={(event) => updateProps("showPrevious", event.target.checked)} /></Field><Field label="Show Next"><input type="checkbox" checked={node.props.showNext !== false} onChange={(event) => updateProps("showNext", event.target.checked)} /></Field></>}
+          {node.type === "archive-title" && <TextControl label="Title" value={String(node.props.title || "Archive")} onChange={(value) => updateProps("title", value)} />}
+          {node.type === "archive-description" && <Field label="Description"><textarea rows={4} value={String(node.props.description || "")} onChange={(event) => updateProps("description", event.target.value)} style={CONTROL_STYLE} /></Field>}
+          {node.type === "pagination" && <><TextControl label="Previous Text" value={String(node.props.previousText || "Previous")} onChange={(value) => updateProps("previousText", value)} /><TextControl label="Next Text" value={String(node.props.nextText || "Next")} onChange={(value) => updateProps("nextText", value)} /><TextControl label="Previous URL" value={String(node.props.previousUrl || "?page=1")} onChange={(value) => updateProps("previousUrl", value)} /><TextControl label="Next URL" value={String(node.props.nextUrl || "?page=2")} onChange={(value) => updateProps("nextUrl", value)} /></>}
 
           {node.type === "toggle" && (
             <>
@@ -5265,19 +5457,17 @@ export default function UniversalBuilder({ target }: Props) {
 
           {node.type === "icon" && (
             <>
-              <SelectControl
-                label="Icon Library"
-                value={String(node.props.iconName || "")}
-                options={[
-                  { label: "Choose an icon", value: "" },
-                  ...Object.keys(themeIcons).map((name) => ({
-                    label: name,
-                    value: name,
-                  })),
-                ]}
-                onChange={(value) => updateProps("iconName", value)}
-              />
-
+              <Field label="Icon Library">
+                <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
+                  {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
+                  {String(node.props.iconName || "Choose Icon")}
+                </button>
+              </Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+                <button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("widgetIcon")}><ImageIcon size={14} /> Media Library</button>
+                <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("widgetIcon")}><Upload size={14} /> Upload image</button>
+              </div>
+              {node.props.iconImage ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><img src={safeMediaUrl(String(node.props.iconImage))} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} /><button type="button" style={BUTTON_STYLE} onClick={() => clearProps("iconImage", "iconImageId")}>Remove image</button></div> : null}
               <TextControl
                 label="Icon Symbol"
                 value={String(node.props.symbol || "★")}
@@ -5293,76 +5483,59 @@ export default function UniversalBuilder({ target }: Props) {
             </>
           )}
 
-          {node.type === "accordion" ||
-          node.type === "tabs" ||
-          node.type === "image-carousel" ||
-          node.type === "media-carousel" ||
-          node.type === "social-icons" ||
-          node.type === "price-list" ? (
-            <Field label="Repeater Items (JSON)">
-              <textarea
-                rows={9}
-                defaultValue={JSON.stringify(
-                  node.props.items ||
-                    node.props.tabs ||
-                    node.props.images ||
-                    node.props.slides ||
-                    node.props.icons ||
-                    [],
-                  null,
-                  2,
-                )}
-                onBlur={(event) => {
-                  try {
-                    const parsed = JSON.parse(event.target.value);
+          {(node.type === "accordion" || node.type === "tabs" || node.type === "social-icons" || node.type === "icon-list" || node.type === "price-list") && (
+            <ControlGroup title="Items" defaultOpen>
+              {repeaterItems.map((entry, index) => (
+                <div key={String(entry.id || index)} style={{ border: "1px solid #dbe3ed", borderRadius: 8, padding: 10, marginBottom: 10, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <strong style={{ fontSize: 12 }}>{node.type === "social-icons" ? `Social icon ${index + 1}` : node.type === "icon-list" ? `List item ${index + 1}` : `Item ${index + 1}`}</strong>
+                    <button type="button" aria-label="Remove item" style={{ ...BUTTON_STYLE, color: "#b42318" }} onClick={() => removeRepeaterItem(index)}><Trash2 size={14} /></button>
+                  </div>
+                  {node.type === "social-icons" ? (
+                    <>
+                      <TextControl label="Label / Network" value={String(entry.label || entry.name || "")} onChange={(value) => updateRepeaterItem(index, { label: value, name: value })} />
+                      <TextControl label="URL" value={String(entry.url || "")} onChange={(value) => updateRepeaterItem(index, { url: value })} placeholder="https://..." />
+                      <Field label="Icon">
+                        <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "icons", value: String(entry.iconName || "") })}>{String(entry.iconName || "Choose icon")}</button>
+                      </Field>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button><button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload</button></div>
+                    </>
+                  ) : node.type === "icon-list" ? (
+                    <>
+                      <TextControl label="Text" value={String(entry.text || entry.label || "")} onChange={(value) => updateRepeaterItem(index, { text: value })} />
+                      <TextControl label="Link URL" value={String(entry.url || "")} onChange={(value) => updateRepeaterItem(index, { url: value })} />
+                      <Field label="Icon"><button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "items", value: String(entry.iconName || "Check") })}>{String(entry.iconName || "Choose icon")}</button></Field>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button><button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload</button></div>
+                    </>
+                  ) : node.type === "price-list" ? (
+                    <><TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} /><TextControl label="Price" value={String(entry.price || "")} onChange={(value) => updateRepeaterItem(index, { price: value })} /><TextControl label="Description" value={String(entry.description || "")} onChange={(value) => updateRepeaterItem(index, { description: value })} /></>
+                  ) : (
+                    <><TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} /><Field label="Content"><textarea rows={4} value={String(entry.content || "")} onChange={(event) => updateRepeaterItem(index, { content: event.target.value })} style={CONTROL_STYLE} /></Field></>
+                  )}
+                </div>
+              ))}
+              <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={addRepeaterItem}><Plus size={15} /> Add Item</button>
+              {node.type === "icon-list" ? <><TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 16)} onChange={(value) => updateProps("iconSize", Number(value))} /><TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} /><UnitControl label="Item Spacing" value={String(node.props.itemSpacing || "12px")} onChange={(value) => updateProps("itemSpacing", value)} /><Field label="Show Dividers"><input type="checkbox" checked={Boolean(node.props.divider)} onChange={(event) => updateProps("divider", event.target.checked)} /></Field></> : null}
+              {node.type === "social-icons" ? <><TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 22)} onChange={(value) => updateProps("iconSize", Number(value))} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateProps("buttonSize", Number(value))} /><SelectControl label="Shape" value={String(node.props.shape || "circle")} options={["circle", "rounded", "square"].map((value) => ({ label: value, value }))} onChange={(value) => updateProps("shape", value)} /></> : null}
+            </ControlGroup>
+          )}
 
-                    const key =
-                      node.type === "tabs"
-                        ? "tabs"
-                        : node.type === "slides"
-                          ? "slides"
-                          : node.type === "image-carousel"
-                            ? "images"
-                            : node.type === "social-icons"
-                              ? "icons"
-                              : "items";
-
-                    updateProps(key, parsed);
-                  } catch {
-                    setError("Repeater JSON is invalid.");
-                  }
-                }}
-                style={{
-                  ...CONTROL_STYLE,
-                  fontFamily: "monospace",
-                  minHeight: 130,
-                }}
-              />
-            </Field>
-          ) : null}
-
-          {(node.type === "posts" || node.type === "loop-grid") && (
-            <>
-              <TextControl
-                label="Number of Posts"
-                value={String(node.props.count || 6)}
-                onChange={(value) => updateProps("count", Number(value))}
-                type="number"
-              />
-
-              <TextControl
-                label="Columns"
-                value={String(node.props.columns || 3)}
-                onChange={(value) => updateProps("columns", Number(value))}
-                type="number"
-              />
-
-              <TextControl
-                label="Category Slug"
-                value={String(node.props.category || "")}
-                onChange={(value) => updateProps("category", value)}
-              />
-            </>
+          {(node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel" || node.type === "post-tabs") && (
+            <ControlGroup title="Query & Content" defaultOpen>
+              <TextControl label="Post Type Slug (post = regular posts)" value={String(node.props.postType || "post")} onChange={(value) => updateProps("postType", value.trim())} />
+              <TextControl label="Number of Posts per Tab / Grid" type="number" value={String(node.props.count || 6)} onChange={(value) => updateProps("count", Math.max(1, Math.min(24, Number(value) || 1)))} />
+              <TextControl label="Columns" type="number" value={String(node.props.columns || 3)} onChange={(value) => updateProps("columns", Math.max(1, Math.min(6, Number(value) || 1)))} />
+              <SelectControl label="Order By" value={String(node.props.orderBy || "date")} options={[{ label: "Published Date", value: "date" }, { label: "Created Date", value: "created" }, { label: "Title", value: "title" }]} onChange={(value) => updateProps("orderBy", value)} />
+              <SelectControl label="Order" value={String(node.props.order || "desc")} options={[{ label: "Newest / Descending", value: "desc" }, { label: "Oldest / Ascending", value: "asc" }]} onChange={(value) => updateProps("order", value)} />
+              {node.type !== "post-tabs" ? <TextControl label="Category Slug" value={String(node.props.category || "")} onChange={(value) => updateProps("category", value)} /> : null}
+              {(["showImage", "showTitle", "showExcerpt", "showDate", "showReadMore"] as const).map((key) => <Field key={key} label={key.replace(/^show/, "Show ")}><input type="checkbox" checked={node.props[key] !== false} onChange={(event) => updateProps(key, event.target.checked)} /></Field>)}
+              <TextControl label="Read More Text" value={String(node.props.readMoreText || "Read More")} onChange={(value) => updateProps("readMoreText", value)} />
+              {node.type === "post-tabs" ? <>
+                <strong style={{ display: "block", margin: "12px 0 6px" }}>Post Tabs</strong>
+                {(Array.isArray(node.props.tabs) ? node.props.tabs as Array<Record<string, unknown>> : []).map((tab, index) => <div key={String(tab.id || index)} style={{ border: "1px solid #dbe3ed", borderRadius: 8, padding: 8, marginBottom: 8 }}><TextControl label="Tab Title" value={String(tab.title || "")} onChange={(value) => { const all = [...(node.props.tabs as Array<Record<string, unknown>> || [])]; all[index] = { ...all[index], title: value }; updateProps("tabs", all); }} /><TextControl label="Category Slug" value={String(tab.categorySlug || "")} onChange={(value) => { const all = [...(node.props.tabs as Array<Record<string, unknown>> || [])]; all[index] = { ...all[index], categorySlug: value }; updateProps("tabs", all); }} /><button type="button" style={{ ...BUTTON_STYLE, color: "#b42318" }} onClick={() => updateProps("tabs", (node.props.tabs as unknown[] || []).filter((_, i) => i !== index))}><Trash2 size={13} /> Remove Tab</button></div>)}
+                <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => updateProps("tabs", [...(Array.isArray(node.props.tabs) ? node.props.tabs : []), { id: `post-tab-${Date.now()}`, title: "New Tab", categorySlug: "" }])}><Plus size={14} /> Add Post Tab</button>
+              </> : null}
+            </ControlGroup>
           )}
 
           {node.type === "form" && (
@@ -5378,6 +5551,8 @@ export default function UniversalBuilder({ target }: Props) {
                 value={String(node.props.emailTo || "")}
                 onChange={(value) => updateProps("emailTo", value)}
               />
+              <TextControl label="Success Message" value={String(node.props.successMessage || "Thank you. Your submission was received.")} onChange={(value) => updateProps("successMessage", value)} />
+              <Field label="Store Entries"><input type="checkbox" checked={node.props.storeEntries !== false} onChange={(event) => updateProps("storeEntries", event.target.checked)} /></Field>
 
               <Field label="Form Fields (JSON)">
                 <textarea
@@ -5842,17 +6017,31 @@ export default function UniversalBuilder({ target }: Props) {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={safeMediaUrl(mediaUrl)} alt="" style={{ width: "100%", maxHeight: 100, objectFit: "cover", display: "block", marginBottom: 6 }} />
                         ) : null}
-                        <button
-                          type="button"
-                          style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 6 }}
-                          onClick={() => void openMediaLibrary("carouselItem", index)}
-                        >
-                          <ImageIcon size={15} /> Choose Image
-                        </button>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                          <button
+                            type="button"
+                            style={BUTTON_STYLE}
+                            onClick={() => void openMediaLibrary("carouselItem", index)}
+                          >
+                            <ImageIcon size={15} /> Media Library
+                          </button>
+                          <button
+                            type="button"
+                            style={BUTTON_STYLE}
+                            onClick={() => openImageUpload("carouselItem", index)}
+                          >
+                            <Upload size={15} /> Upload Image
+                          </button>
+                        </div>
                         <TextControl
                           label="Image URL"
                           value={mediaUrl}
                           onChange={(value) => updateItem(index, { ...entry, url: value })}
+                        />
+                        <TextControl
+                          label="Image Alt Text"
+                          value={String(entry.alt || "")}
+                          onChange={(value) => updateItem(index, { ...entry, alt: value })}
                         />
                         {mediaUrl ? (
                           <button
@@ -6258,6 +6447,15 @@ export default function UniversalBuilder({ target }: Props) {
       textColorState === "hover" ? node.styles.colorHover : node.styles.color,
       device,
     );
+    const menuStyles = node.props.menuItemStyles && typeof node.props.menuItemStyles === "object"
+      ? node.props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
+      : {};
+    const menuDevice = menuStyles[device] || {};
+    const activeMenuItemStyle = menuDevice[menuItemState] || {};
+    const updateMenuItemStyle = (key: "color" | "backgroundColor", value: string) => {
+      const next = { ...menuStyles, [device]: { ...menuDevice, [menuItemState]: { ...activeMenuItemStyle, [key]: value } } };
+      updateProps("menuItemStyles", next);
+    };
 
     if (isImageNode) {
       const currentOpacity =
@@ -6379,6 +6577,85 @@ export default function UniversalBuilder({ target }: Props) {
 
     return (
       <>
+        {node.type === "menu" ? (
+          <ControlGroup title="Navigation Menu Item Colors" defaultOpen>
+            <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px" }}>Choose Desktop, Tablet or Mobile from the builder toolbar, then set each menu item state.</p>
+            <SegmentedControl
+              label="Item State"
+              value={menuItemState}
+              options={[{ label: "Normal", value: "normal" }, { label: "Hover", value: "hover" }, { label: "Active", value: "active" }]}
+              onChange={(value) => setMenuItemState(value as "normal" | "hover" | "active")}
+            />
+            <Field label={`${device[0].toUpperCase()}${device.slice(1)} Text Color — ${menuItemState}`}>
+              <input type="color" value={/^#[\da-f]{6}$/i.test(activeMenuItemStyle.color || "") ? activeMenuItemStyle.color : "#1f2937"} onChange={(event) => updateMenuItemStyle("color", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+            </Field>
+            <Field label={`${device[0].toUpperCase()}${device.slice(1)} Background Color — ${menuItemState}`}>
+              <input type="color" value={/^#[\da-f]{6}$/i.test(activeMenuItemStyle.backgroundColor || "") ? activeMenuItemStyle.backgroundColor : "#ffffff"} onChange={(event) => updateMenuItemStyle("backgroundColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+            </Field>
+            <Field label="Mobile Menu Panel Background">
+              <input type="color" value={String(node.props.mobilePanelBackground || "#ffffff")} onChange={(event) => updateProps("mobilePanelBackground", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+            </Field>
+            <Field label="Mobile Menu Panel Text Color">
+              <input type="color" value={String(node.props.mobilePanelColor || "#1f2937")} onChange={(event) => updateProps("mobilePanelColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+            </Field>
+            <Field label="Mobile Toggle Icon Color">
+              <input type="color" value={String(node.props.iconColor || "#0c2f55")} onChange={(event) => updateProps("iconColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+            </Field>
+          </ControlGroup>
+        ) : null}
+        {(node.type === "icon" || node.type === "icon-box" || node.type === "icon-list" || node.type === "social-icons") ? (
+          <ControlGroup title="Icon Styling" defaultOpen>
+            <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} />
+            <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || node.props.size || 24)} onChange={(value) => updateProps(node.type === "icon" ? "size" : "iconSize", Number(value))} />
+            {node.type === "social-icons" ? <><TextControl label="Icon Background" value={String(node.props.iconBackground || "#0c2f55")} onChange={(value) => updateProps("iconBackground", value)} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateProps("buttonSize", Number(value))} /></> : null}
+          </ControlGroup>
+        ) : null}
+        {(node.type === "tabs" || node.type === "post-tabs") ? (
+          <ControlGroup title="Tabs Styling" defaultOpen>
+            <TextControl label="Normal Text Color" value={String(node.props.tabNormalColor || "#334155")} onChange={(value) => updateProps("tabNormalColor", value)} />
+            <TextControl label="Normal Background" value={String(node.props.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateProps("tabNormalBackground", value)} />
+            <TextControl label="Hover Text Color" value={String(node.props.tabHoverColor || "#0c2f55")} onChange={(value) => updateProps("tabHoverColor", value)} />
+            <TextControl label="Hover Background" value={String(node.props.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateProps("tabHoverBackground", value)} />
+            <TextControl label="Active Text Color" value={String(node.props.tabActiveColor || "#ffffff")} onChange={(value) => updateProps("tabActiveColor", value)} />
+            <TextControl label="Active Background" value={String(node.props.tabActiveBackground || "#0c2f55")} onChange={(value) => updateProps("tabActiveBackground", value)} />
+          </ControlGroup>
+        ) : null}
+        {(node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel" || node.type === "post-tabs") ? (
+          <ControlGroup title="Post Cards Styling" defaultOpen>
+            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateProps("cardBackground", value)} />
+            <TextControl label="Card Border Color" value={String(node.props.cardBorderColor || "#e2e8f0")} onChange={(value) => updateProps("cardBorderColor", value)} />
+            <UnitControl label="Card Border Radius" value={String(node.props.cardRadius || "8px")} onChange={(value) => updateProps("cardRadius", value)} />
+            <UnitControl label="Grid / Card Gap" value={String(node.props.gap || "18px")} onChange={(value) => updateProps("gap", value)} />
+            <UnitControl label="Image Height" value={String(node.props.imageHeight || "180px")} onChange={(value) => updateProps("imageHeight", value)} />
+          </ControlGroup>
+        ) : null}
+        {node.type === "price-table" ? (
+          <ControlGroup title="Pricing Card Styling" defaultOpen>
+            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateProps("cardBackground", value)} />
+            <TextControl label="Card Border" value={String(node.props.cardBorderColor || "#dbe3ed")} onChange={(value) => updateProps("cardBorderColor", value)} />
+            <TextControl label="Title Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateProps("titleColor", value)} />
+            <TextControl label="Price Color" value={String(node.props.priceColor || "#3984e8")} onChange={(value) => updateProps("priceColor", value)} />
+            <TextControl label="Button Background" value={String(node.props.buttonBackground || "#0c2f55")} onChange={(value) => updateProps("buttonBackground", value)} />
+            <TextControl label="Button Text Color" value={String(node.props.buttonColor || "#ffffff")} onChange={(value) => updateProps("buttonColor", value)} />
+          </ControlGroup>
+        ) : null}
+        {node.type === "accordion" ? (
+          <ControlGroup title="Accordion Styling" defaultOpen>
+            <TextControl label="Title Text Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateProps("titleColor", value)} />
+            <TextControl label="Title Background" value={String(node.props.titleBackground || "#f8fafc")} onChange={(value) => updateProps("titleBackground", value)} />
+            <TextControl label="Content Text Color" value={String(node.props.contentColor || "#334155")} onChange={(value) => updateProps("contentColor", value)} />
+            <TextControl label="Content Background" value={String(node.props.contentBackground || "#ffffff")} onChange={(value) => updateProps("contentBackground", value)} />
+            <TextControl label="Divider Color" value={String(node.props.dividerColor || "#e2e8f0")} onChange={(value) => updateProps("dividerColor", value)} />
+          </ControlGroup>
+        ) : null}
+        {node.type === "countdown" ? (
+          <ControlGroup title="Countdown Styling" defaultOpen>
+            <TextControl label="Number Color" value={String(node.props.numberColor || "#ffffff")} onChange={(value) => updateProps("numberColor", value)} />
+            <TextControl label="Label Color" value={String(node.props.labelColor || "#ffffff")} onChange={(value) => updateProps("labelColor", value)} />
+            <TextControl label="Box Background" value={String(node.props.boxBackground || "#0c2f55")} onChange={(value) => updateProps("boxBackground", value)} />
+            <UnitControl label="Box Radius" value={String(node.props.boxRadius || "8px")} onChange={(value) => updateProps("boxRadius", value)} />
+          </ControlGroup>
+        ) : null}
         <ControlGroup title="Text Color" defaultOpen>
           <SegmentedControl
             label="State"
@@ -8106,39 +8383,23 @@ export default function UniversalBuilder({ target }: Props) {
             value={iconPickerTarget.value}
             onClose={() => setIconPickerTarget(null)}
             onSelect={(iconName) => {
-              if (iconPickerTarget.kind === "button") {
-                updatePropsValues({
-                  iconName,
-                  iconImage: "",
-                  iconImageId: "",
-                });
-              } else if (selectedNode) {
-                const slides = Array.isArray(selectedNode.props.slides)
-                  ? [...selectedNode.props.slides]
-                  : [];
+              if (iconPickerTarget.kind === "button" || iconPickerTarget.kind === "widget") {
+                updatePropsValues({ iconName, iconImage: "", iconImageId: "" });
+              } else if (iconPickerTarget.kind === "repeaterItem" && selectedNode) {
+                const entries = Array.isArray(selectedNode.props[iconPickerTarget.key]) ? [...(selectedNode.props[iconPickerTarget.key] as unknown[])] : [];
+                const current = entries[iconPickerTarget.index];
+                const entry = current && typeof current === "object" ? current as Record<string, unknown> : {};
+                entries[iconPickerTarget.index] = { ...entry, iconName, iconImage: "", iconMediaId: "" };
+                updateProps(iconPickerTarget.key, entries);
+              } else if (iconPickerTarget.kind === "slideButton" && selectedNode) {
+                const slides = Array.isArray(selectedNode.props.slides) ? [...selectedNode.props.slides] : [];
                 const slideValue = slides[iconPickerTarget.slideIndex];
-                const slide =
-                  slideValue && typeof slideValue === "object"
-                    ? (slideValue as Record<string, unknown>)
-                    : {};
-                const buttons = Array.isArray(slide.buttons)
-                  ? [...slide.buttons]
-                  : [];
+                const slide = slideValue && typeof slideValue === "object" ? slideValue as Record<string, unknown> : {};
+                const buttons = Array.isArray(slide.buttons) ? [...slide.buttons] : [];
                 const buttonValue = buttons[iconPickerTarget.buttonIndex];
-                const button =
-                  buttonValue && typeof buttonValue === "object"
-                    ? (buttonValue as Record<string, unknown>)
-                    : {};
-                buttons[iconPickerTarget.buttonIndex] = {
-                  ...button,
-                  iconName,
-                  iconImage: "",
-                  iconImageId: "",
-                };
-                slides[iconPickerTarget.slideIndex] = {
-                  ...slide,
-                  buttons,
-                };
+                const button = buttonValue && typeof buttonValue === "object" ? buttonValue as Record<string, unknown> : {};
+                buttons[iconPickerTarget.buttonIndex] = { ...button, iconName, iconImage: "", iconImageId: "" };
+                slides[iconPickerTarget.slideIndex] = { ...slide, buttons };
                 updateProps("slides", slides);
               }
               setIconPickerTarget(null);

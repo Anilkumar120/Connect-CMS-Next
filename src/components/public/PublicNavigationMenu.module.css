@@ -1,5 +1,6 @@
 .root {
   box-sizing: border-box;
+  min-width: 0;
 }
 
 .desktopList {
@@ -22,17 +23,33 @@
 .menuList li,
 .submenu li {
   position: relative;
+  min-width: 0;
 }
 
-.menuList a,
-.submenu a {
-  display: block;
+.menuItemLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   text-decoration: none;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.menuItemLink:hover,
+.menuItemLink:focus-visible {
+  text-decoration: none;
+}
+
+.menuItemLink:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.active {
+  font-weight: 700;
 }
 
 .itemIcon {
   flex: 0 0 auto;
-  margin-right: 7px;
   vertical-align: middle;
 }
 
@@ -88,8 +105,6 @@
   max-width: 100vw;
   padding: 20px;
   overflow: auto;
-  background: #fff;
-  color: #1f2937;
   box-shadow: 0 0 32px rgb(15 23 42 / 18%);
 }
 
@@ -152,13 +167,21 @@
   border-bottom: 1px solid rgb(148 163 184 / 24%);
 }
 
+.panelItems .menuItemLink {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 @keyframes slide-in {
-  from {
-    transform: translateX(12px);
-    opacity: 0.8;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
+  from { transform: translateX(12px); opacity: 0.8; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (max-width: 767px) {
+  .menuList,
+  .submenu {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

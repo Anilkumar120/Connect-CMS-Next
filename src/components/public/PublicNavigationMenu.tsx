@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { themeIcons } from "./theme-icons";
 import styles from "./PublicNavigationMenu.module.css";
@@ -15,6 +16,21 @@ export type PublicNavigationMenuItem = {
   iconName?: string;
   children?: PublicNavigationMenuItem[];
 };
+
+type MenuItemStateStyle = {
+  color?: string;
+  backgroundColor?: string;
+};
+
+type MenuDeviceStyle = {
+  normal?: MenuItemStateStyle;
+  hover?: MenuItemStateStyle;
+  active?: MenuItemStateStyle;
+};
+
+export type ResponsiveMenuItemStyles = Partial<
+  Record<"desktop" | "tablet" | "mobile", MenuDeviceStyle>
+>;
 
 type Props = {
   items: PublicNavigationMenuItem[];
@@ -37,6 +53,9 @@ type Props = {
   itemPadding?: string;
   menuId?: string;
   menuLocation?: string;
+  menuItemStyles?: ResponsiveMenuItemStyles;
+  mobilePanelBackground?: string;
+  mobilePanelColor?: string;
 };
 
 function safeLink(value: unknown): string {
@@ -44,19 +63,78 @@ function safeLink(value: unknown): string {
     return "#";
   }
   const url = value.trim();
-  if (url.startsWith("#") || url.startsWith("?")) return url;
-  if (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\")) {
+  if (url.startsWith("#") || url.startsWith("?") || (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\"))) {
     return url;
   }
   if (url.includes("\\") || url.startsWith("//")) return "#";
   try {
     const parsed = new URL(url);
-    return ["https:", "http:", "mailto:", "tel:"].includes(parsed.protocol)
-      ? url
-      : "#";
+    return ["https:", "http:", "mailto:", "tel:"].includes(parsed.protocol) ? url : "#";
   } catch {
     return `/${url.replace(/^\/+/, "")}`;
   }
+}
+
+function safeCssColor(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const color = value.trim();
+  return /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i.test(color)
+    ? color
+    : undefined;
+}
+
+function safeSelectorValue(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+}
+
+function buildMenuItemCss(
+  nodeId: string,
+  menuItemStyles: ResponsiveMenuItemStyles | undefined,
+  breakpoint: number,
+): string {
+  if (!menuItemStyles || typeof menuItemStyles !== "object") return "";
+  const root = `[data-builder-menu-id="${safeSelectorValue(nodeId)}"]`;
+  const item = `${root} .${styles.menuItemLink}`;
+  const rules: string[] = [];
+
+  const addDeviceRules = (device: "desktop" | "tablet" | "mobile") => {
+    const config = menuItemStyles[device];
+    if (!config) return [];
+    const deviceRules: string[] = [];
+    const write = (selector: string, state: MenuItemStateStyle | undefined) => {
+      if (!state) return;
+      const declarations = [
+        safeCssColor(state.color) ? `color:${safeCssColor(state.color)} !important` : "",
+        safeCssColor(state.backgroundColor) ? `background-color:${safeCssColor(state.backgroundColor)} !important` : "",
+      ].filter(Boolean);
+      if (declarations.length) deviceRules.push(`${selector}{${declarations.join(";")}}`);
+    };
+
+    write(item, config.normal);
+    write(`${item}:hover,${item}:focus-visible`, config.hover);
+    write(`${item}.${styles.active}`, config.active);
+    return deviceRules;
+  };
+
+  rules.push(...addDeviceRules("desktop"));
+  const tabletRules = addDeviceRules("tablet");
+  if (tabletRules.length) {
+    rules.push(`@media (min-width:${breakpoint + 1}px) and (max-width:1024px){${tabletRules.join("\n")}}`);
+  }
+  const mobileRules = addDeviceRules("mobile");
+  if (mobileRules.length) {
+    rules.push(`@media (max-width:${breakpoint}px){${mobileRules.join("\n")}}`);
+  }
+  return rules.join("\n");
+}
+
+function isActiveLink(href: string, pathname: string | null): boolean {
+  if (!pathname) return false;
+  const safe = safeLink(href);
+  if (!safe.startsWith("/")) return false;
+  const path = safe.split(/[?#]/, 1)[0] || "/";
+  if (path === "/") return pathname === "/";
+  return pathname === path || pathname.startsWith(`${path.replace(/\/$/, "")}/`);
 }
 
 export default function PublicNavigationMenu({
@@ -80,58 +158,41 @@ export default function PublicNavigationMenu({
   itemPadding,
   menuId,
   menuLocation = "HEADER",
+  menuItemStyles,
+  mobilePanelBackground = "#ffffff",
+  mobilePanelColor = "#1f2937",
 }: Props) {
   const [isMobile, setIsMobile] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [resolvedItems, setResolvedItems] = useState(items);
-  const breakpoint = Number.isFinite(mobileBreakpoint)
-    ? Math.max(320, Math.min(1920, mobileBreakpoint))
-    : 767;
+  const pathname = usePathname();
+  const breakpoint = Number.isFinite(mobileBreakpoint) ? Math.max(320, Math.min(1920, mobileBreakpoint)) : 767;
   const direction = orientation === "vertical" ? "column" : "row";
-  const justifyContent =
-    alignment === "center"
-      ? "center"
-      : alignment === "right"
-        ? "flex-end"
-        : "flex-start";
+  const justifyContent = alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start";
   const OpenIcon = themeIcons[openIcon || ""] || Menu;
   const CloseIcon = themeIcons[closeIcon || ""] || X;
-  const resolvedIconSize = Number.isFinite(iconSize)
-    ? Math.max(12, Math.min(64, iconSize))
-    : 24;
+  const resolvedIconSize = Number.isFinite(iconSize) ? Math.max(12, Math.min(64, iconSize)) : 24;
+  const responsiveCss = buildMenuItemCss(nodeId, menuItemStyles, breakpoint);
 
   useEffect(() => {
-    if (!menuId || (menuLocation !== "HEADER" && menuLocation !== "FOOTER")) {
-      return;
-    }
+    setResolvedItems(items);
+  }, [items]);
 
+  useEffect(() => {
+    if (!menuId || (menuLocation !== "HEADER" && menuLocation !== "FOOTER")) return;
     let active = true;
     const loadCurrentMenu = async () => {
       try {
-        const response = await fetch(
-          `/api/public/menus/${menuLocation}?menuId=${encodeURIComponent(menuId)}`,
-          { cache: "no-store" },
-        );
+        const response = await fetch(`/api/public/menus/${menuLocation}?menuId=${encodeURIComponent(menuId)}`, { cache: "no-store" });
         const result = await response.json();
-        if (!response.ok || !result.success) {
-          throw new Error(result.message || "Unable to load navigation links.");
-        }
-        if (active) {
-          setResolvedItems(
-            Array.isArray(result.menu?.items)
-              ? (result.menu.items as PublicNavigationMenuItem[])
-              : [],
-          );
-        }
+        if (!response.ok || !result.success) throw new Error(result.message || "Unable to load navigation links.");
+        if (active) setResolvedItems(Array.isArray(result.menu?.items) ? result.menu.items as PublicNavigationMenuItem[] : []);
       } catch (error) {
         console.error("Public navigation menu refresh failed:", error);
       }
     };
-
     void loadCurrentMenu();
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, [menuId, menuLocation]);
 
   useEffect(() => {
@@ -148,9 +209,7 @@ export default function PublicNavigationMenu({
   useEffect(() => {
     if (!isMobile || !isOpen) return;
     const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
-    };
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setIsOpen(false); };
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleKeyDown);
     return () => {
@@ -159,40 +218,25 @@ export default function PublicNavigationMenu({
     };
   }, [isMobile, isOpen]);
 
-  const renderItems = (
-    menuItems: PublicNavigationMenuItem[],
-    nested = false,
-  ): ReactNode => (
-    <ul
-      className={nested ? styles.submenu : styles.menuList}
-      style={{
-        flexDirection: nested || isMobile ? "column" : direction,
-        justifyContent: isMobile ? "flex-start" : justifyContent,
-      }}
-    >
+  const renderItems = (menuItems: PublicNavigationMenuItem[], nested = false): ReactNode => (
+    <ul className={nested ? styles.submenu : styles.menuList} style={{ flexDirection: nested || isMobile ? "column" : direction, justifyContent: isMobile ? "flex-start" : justifyContent }}>
       {menuItems.map((item, index) => {
         const children = Array.isArray(item.children) ? item.children : [];
         const ItemIcon = themeIcons[item.iconName || itemIconName || ""];
+        const href = safeLink(item.href || item.url);
+        const active = isActiveLink(href, pathname);
         return (
           <li key={item.id || `${item.label || item.title || "item"}-${index}`}>
             <a
-              href={safeLink(item.href || item.url)}
+              className={`${styles.menuItemLink} ${active ? styles.active : ""}`.trim()}
+              href={href}
               target={item.target === "_blank" ? "_blank" : undefined}
               rel={item.target === "_blank" ? "noopener noreferrer" : undefined}
-              style={{
-                color: "inherit",
-                padding: itemPadding || undefined,
-              }}
+              aria-current={active ? "page" : undefined}
+              style={{ padding: itemPadding || undefined }}
               onClick={() => setIsOpen(false)}
             >
-              {ItemIcon ? (
-                <ItemIcon
-                  size={16}
-                  className={styles.itemIcon}
-                  style={{ color: iconColor }}
-                  aria-hidden="true"
-                />
-              ) : null}
+              {ItemIcon ? <ItemIcon size={16} className={styles.itemIcon} style={{ color: iconColor }} aria-hidden="true" /> : null}
               {item.label || item.title || "Menu item"}
             </a>
             {children.length ? renderItems(children, true) : null}
@@ -208,70 +252,8 @@ export default function PublicNavigationMenu({
     flexDirection: isMobile && !mobileToggle ? "column" : direction,
     justifyContent,
     position: style.position || "relative",
-    "--builder-menu-gap":
-      typeof style.gap === "string" || typeof style.gap === "number"
-        ? String(style.gap)
-        : "18px",
+    "--builder-menu-gap": typeof style.gap === "string" || typeof style.gap === "number" ? String(style.gap) : "18px",
   };
-
-  if (isMobile && mobileToggle) {
-    return (
-      <nav
-        className={`${styles.root} ${className || ""}`.trim()}
-        id={id}
-        style={rootStyle}
-        aria-label="Main navigation"
-        data-builder-node-id={nodeId}
-      >
-        <button
-          type="button"
-          className={styles.toggle}
-          aria-label="Open menu"
-          aria-expanded={isOpen}
-          aria-controls={`mobile-menu-${nodeId}`}
-          onClick={() => setIsOpen(true)}
-          style={{ color: iconColor }}
-        >
-          <OpenIcon size={resolvedIconSize} aria-hidden="true" />
-        </button>
-        {isOpen ? (
-          <div
-            className={styles.backdrop}
-            onClick={() => setIsOpen(false)}
-            role="presentation"
-          >
-            <div
-              id={`mobile-menu-${nodeId}`}
-              className={`${styles.panel} ${styles[mobileLayout] || styles["slide-in"]} ${styles[mobilePosition] || styles.right}`}
-              style={{
-                width: mobileLayout === "fullscreen" ? undefined : mobileWidth,
-                backgroundColor:
-                  typeof style.backgroundColor === "string"
-                    ? style.backgroundColor
-                    : "#fff",
-                color: typeof style.color === "string" ? style.color : "#1f2937",
-              }}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Mobile navigation"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                className={styles.close}
-                aria-label="Close menu"
-                onClick={() => setIsOpen(false)}
-                style={{ color: iconColor }}
-              >
-                <CloseIcon size={resolvedIconSize} aria-hidden="true" />
-              </button>
-              <div className={styles.panelItems}>{renderItems(resolvedItems)}</div>
-            </div>
-          </div>
-        ) : null}
-      </nav>
-    );
-  }
 
   return (
     <nav
@@ -280,8 +262,36 @@ export default function PublicNavigationMenu({
       style={rootStyle}
       aria-label="Main navigation"
       data-builder-node-id={nodeId}
+      data-builder-menu-id={safeSelectorValue(nodeId)}
     >
-      <div className={styles.desktopList}>{renderItems(resolvedItems)}</div>
+      {responsiveCss ? <style>{responsiveCss}</style> : null}
+      {isMobile && mobileToggle ? (
+        <>
+          <button type="button" className={styles.toggle} aria-label={isOpen ? "Close menu" : "Open menu"} aria-expanded={isOpen} aria-controls={`mobile-menu-${nodeId}`} onClick={() => setIsOpen((open) => !open)} style={{ color: iconColor }}>
+            {isOpen ? <CloseIcon size={resolvedIconSize} aria-hidden="true" /> : <OpenIcon size={resolvedIconSize} aria-hidden="true" />}
+          </button>
+          {isOpen ? (
+            <div className={styles.backdrop} onClick={() => setIsOpen(false)} role="presentation">
+              <div
+                id={`mobile-menu-${nodeId}`}
+                className={`${styles.panel} ${styles[mobileLayout] || styles["slide-in"]} ${styles[mobilePosition] || styles.right}`}
+                style={{ width: mobileLayout === "fullscreen" ? undefined : mobileWidth, backgroundColor: safeCssColor(mobilePanelBackground) || "#ffffff", color: safeCssColor(mobilePanelColor) || "#1f2937" }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Mobile navigation"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button type="button" className={styles.close} aria-label="Close menu" onClick={() => setIsOpen(false)} style={{ color: iconColor }}>
+                  <CloseIcon size={resolvedIconSize} aria-hidden="true" />
+                </button>
+                <div className={styles.panelItems}>{renderItems(resolvedItems)}</div>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className={styles.desktopList}>{renderItems(resolvedItems)}</div>
+      )}
     </nav>
   );
 }

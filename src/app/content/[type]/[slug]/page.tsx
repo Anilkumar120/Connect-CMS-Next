@@ -101,6 +101,18 @@ async function CustomContentPage({
             <PublicBuilderDocument
               layout={universalBuilderDocument.layout}
               globalStyles={universalBuilderDocument.globalStyles}
+              postContext={{
+                id: post.id,
+                title: post.title,
+                slug: post.slug,
+                postTypeId: post.postTypeId,
+                excerpt: post.excerpt,
+                contentHtml: html,
+                featuredImage: post.featuredImage,
+                publishedAt: post.publishedAt,
+                categories: post.categories.map(({ category }: { category: { name: string; slug: string } }) => ({ name: category.name, slug: category.slug })),
+              }}
+              postUrlPrefix={`/content/${encodeURIComponent(type)}`}
             />
           ) : hasBuilderContent && builderLayout ? (
             <PublicPageBuilder layout={builderLayout} />
@@ -112,10 +124,10 @@ async function CustomContentPage({
           )}
           {(post.categories.length > 0 || post.tags.length > 0) && (
             <footer className="custom-content-taxonomies">
-              {post.categories.map(({ category }) => (
+              {post.categories.map(({ category }: { category: { name: string; slug: string } }) => (
                 <span key={category.slug}>{category.name}</span>
               ))}
-              {post.tags.map(({ tag }) => (
+              {post.tags.map(({ tag }: { tag: { name: string; slug: string } }) => (
                 <span key={tag.slug}>#{tag.name}</span>
               ))}
             </footer>
