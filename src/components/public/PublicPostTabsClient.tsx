@@ -97,7 +97,7 @@ export default function PublicPostTabsClient({
           </button>
         ))}
       </div>
-      <div role="tabpanel" style={{ display: "grid", gridTemplateColumns: `repeat(${safeColumns}, minmax(0, 1fr))`, gap }}>
+      <div role="tabpanel" style={{ display: "grid", gridTemplateColumns: `repeat(var(--builder-prop-columns, ${safeColumns}), minmax(0, 1fr))`, gap }}>
         {(current?.posts || []).map((post) => (
           <article key={post.id} style={cardStyle}>
             {showImage && post.featuredImage ? (

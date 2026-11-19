@@ -85,6 +85,12 @@ import {
   builderSpacingCss,
   combineBuilderSpacing,
 } from "@/lib/builder/spacing";
+import {
+  resolveBuilderProps,
+  resolveBuilderStyles,
+  setBuilderPropForDevice,
+  setBuilderStyleForDevice,
+} from "@/lib/builder/responsive";
 
 import styles from "./UniversalBuilder.module.css";
 
@@ -562,6 +568,7 @@ function moveNode(
 
 function getResponsiveValue<T>(
   value:
+    | T
     | {
         desktop?: T;
         tablet?: T;
@@ -570,9 +577,16 @@ function getResponsiveValue<T>(
     | undefined,
   device: BuilderDevice,
 ): T | undefined {
-  if (!value) return undefined;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) return value as T;
 
-  return value[device] ?? value.desktop;
+  const responsive = value as { desktop?: T; tablet?: T; mobile?: T };
+  if (!("desktop" in responsive || "tablet" in responsive || "mobile" in responsive)) {
+    return value as T;
+  }
+
+  // Tablet/Mobile inherit from Desktop only. They never inherit from each other.
+  return responsive[device] ?? responsive.desktop;
 }
 
 function getResponsiveScalar<T extends string | number>(
@@ -714,7 +728,7 @@ function backgroundToCss(
   }
 
   if (background.positionX || background.positionY) {
-    result.backgroundPosition = `${background.positionX?.desktop || "50%"} ${background.positionY?.desktop || "50%"}`;
+    result.backgroundPosition = `${getResponsiveScalar(background.positionX, device) || "50%"} ${getResponsiveScalar(background.positionY, device) || "50%"}`;
   }
 
   if (background.size) {
@@ -756,7 +770,7 @@ function getNodeInlineStyle(
   device: BuilderDevice,
 ): CSSProperties {
   const style: CSSProperties = {};
-  const s = node.styles;
+  const s = resolveBuilderStyles(node.styles, device);
 
   const put = (key: string, value: unknown) => {
     if (value !== undefined && value !== null && value !== "") {
@@ -962,11 +976,15 @@ function getContainerChildrenStyle(
     gridAutoFlow: style.gridAutoFlow,
   };
 
-  if (node.type === "section" && node.props.contentWidth !== "full") {
+  const responsiveProps = resolveBuilderProps(node.props, device);
+  if (node.type === "section" && responsiveProps.contentWidth !== "full") {
     childrenStyle.width = "100%";
-    childrenStyle.maxWidth = String(node.props.containerWidth || "1200px");
+    childrenStyle.maxWidth = String(responsiveProps.containerWidth || "1200px");
     childrenStyle.marginLeft = "auto";
     childrenStyle.marginRight = "auto";
+  } else if (node.type === "section") {
+    childrenStyle.width = "100%";
+    childrenStyle.maxWidth = "none";
   }
 
   return childrenStyle;
@@ -1405,31 +1423,32 @@ function PreviewNode({
     (device === "mobile" && node.advanced?.hideOnMobile)
   ) return null;
 
-  const props = node.props;
+  const props = resolveBuilderProps(node.props, device);
   const children = node.children || [];
+  const resolvedStyles = resolveBuilderStyles(node.styles, device);
 
   const inlineStyle = getNodeInlineStyle(node, device);
 
-  if (hovered && node.styles.backgroundHover) {
-    Object.assign(inlineStyle, backgroundToCss(node.styles.backgroundHover, device));
+  if (hovered && resolvedStyles.backgroundHover) {
+    Object.assign(inlineStyle, backgroundToCss(resolvedStyles.backgroundHover, device));
   }
-  if (hovered && node.styles.colorHover) {
-    inlineStyle.color = getResponsiveScalar(node.styles.colorHover, device);
+  if (hovered && resolvedStyles.colorHover) {
+    inlineStyle.color = getResponsiveScalar(resolvedStyles.colorHover, device);
   }
-  if (hovered && node.styles.transformSettingsHover) {
-    inlineStyle.transform = builderTransformCss(node.styles.transformSettingsHover);
+  if (hovered && resolvedStyles.transformSettingsHover) {
+    inlineStyle.transform = builderTransformCss(resolvedStyles.transformSettingsHover);
     inlineStyle.transformOrigin =
-      node.styles.transformSettingsHover.origin || "center center";
+      resolvedStyles.transformSettingsHover.origin || "center center";
   }
-  if (hovered && node.styles.borderHover?.style && node.styles.borderHover.style !== "none") {
-    inlineStyle.borderStyle = node.styles.borderHover.style;
-    inlineStyle.borderWidth = node.styles.borderHover.width || "1px";
+  if (hovered && resolvedStyles.borderHover?.style && resolvedStyles.borderHover.style !== "none") {
+    inlineStyle.borderStyle = resolvedStyles.borderHover.style;
+    inlineStyle.borderWidth = resolvedStyles.borderHover.width || "1px";
     inlineStyle.borderColor =
-      getResponsiveScalar(node.styles.borderHover.color, device) || "#dbe3ed";
-    inlineStyle.borderRadius = getResponsiveValue(node.styles.borderHover.radius, device);
+      getResponsiveScalar(resolvedStyles.borderHover.color, device) || "#dbe3ed";
+    inlineStyle.borderRadius = getResponsiveValue(resolvedStyles.borderHover.radius, device);
   }
-  if (hovered && node.styles.boxShadowHover) {
-    inlineStyle.boxShadow = node.styles.boxShadowHover;
+  if (hovered && resolvedStyles.boxShadowHover) {
+    inlineStyle.boxShadow = resolvedStyles.boxShadowHover;
   }
 
   const advancedClass = node.advanced?.cssClasses || "";
@@ -1935,7 +1954,17 @@ function PreviewNode({
     const menuItemStyles = props.menuItemStyles && typeof props.menuItemStyles === "object"
       ? props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
       : {};
-    const currentMenuStyles = menuItemStyles[device] || {};
+    const desktopMenuStyles = menuItemStyles.desktop || {};
+    const selectedMenuStyles = menuItemStyles[device] || {};
+    const currentMenuStyles = Object.fromEntries(
+      (["normal", "hover", "active"] as const).map((state) => [
+        state,
+        {
+          ...(desktopMenuStyles[state] || {}),
+          ...(selectedMenuStyles[state] || {}),
+        },
+      ]),
+    ) as Record<string, Record<string, string>>;
     const cssColor = (value: unknown) => typeof value === "string" && /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i.test(value) ? value : "";
     const menuSelectorId = node.id.replace(/[^a-zA-Z0-9_-]/g, "_");
     const menuSelector = `[data-builder-node-id="${menuSelectorId}"]`;
@@ -2587,11 +2616,12 @@ function SortableCanvasNode({
   const selected = selectedId === node.id;
   const children = node.children || [];
   const isLayout = LAYOUT_TYPES.has(node.type);
+  const deviceStyles = resolveBuilderStyles(node.styles, device);
   const layoutDisplay =
-    getResponsiveValue(node.styles.display, device) ||
+    getResponsiveValue(deviceStyles.display, device) ||
     (node.type === "grid" ? "grid" : "flex");
   const layoutDirection =
-    getResponsiveValue(node.styles.direction, device) ||
+    getResponsiveValue(deviceStyles.direction, device) ||
     (node.type === "row" ? "row" : "column");
   const sortingStrategy =
     layoutDisplay === "grid"
@@ -3040,10 +3070,15 @@ export default function UniversalBuilder({ target }: Props) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [contextMenu]);
 
-  const selectedNode = useMemo(
-    () => findNode(layout.root, selectedId),
-    [layout.root, selectedId],
-  );
+  const selectedNode = useMemo(() => {
+    const rawNode = findNode(layout.root, selectedId);
+    if (!rawNode) return undefined;
+    return {
+      ...rawNode,
+      props: resolveBuilderProps(rawNode.props, device),
+      styles: resolveBuilderStyles(rawNode.styles, device),
+    };
+  }, [layout.root, selectedId, device]);
 
   const isLayoutNode = Boolean(
     selectedNode && LAYOUT_TYPES.has(selectedNode.type),
@@ -3526,6 +3561,16 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  const updateResponsiveProp = (key: string, value: unknown) => {
+    if (!selectedId) return;
+    commitRoot(
+      updateTree(layout.root, selectedId, (node) => ({
+        ...node,
+        props: setBuilderPropForDevice(node.props, key, value, device),
+      })),
+    );
+  };
+
   const updatePropsValues = (values: Record<string, unknown>) => {
     if (!selectedId) return;
     commitRoot(
@@ -3578,11 +3623,18 @@ export default function UniversalBuilder({ target }: Props) {
 
         for (const [key, value] of updates) {
           const currentValue = node.styles[key];
-          const current =
-            typeof currentValue === "string" ||
-            typeof currentValue === "number"
+          const isResponsiveObject =
+            Boolean(currentValue) &&
+            typeof currentValue === "object" &&
+            !Array.isArray(currentValue) &&
+            ("desktop" in (currentValue as Record<string, unknown>) ||
+              "tablet" in (currentValue as Record<string, unknown>) ||
+              "mobile" in (currentValue as Record<string, unknown>));
+          const current = isResponsiveObject
+            ? (currentValue as Record<string, unknown>)
+            : currentValue !== undefined && currentValue !== null
               ? { desktop: currentValue }
-              : (currentValue as Record<string, unknown> | undefined) || {};
+              : {};
 
           (nextStyles as Record<string, unknown>)[key] = {
             ...current,
@@ -3629,10 +3681,12 @@ export default function UniversalBuilder({ target }: Props) {
     commitRoot(
       updateTree(layout.root, selectedId, (node) => ({
         ...node,
-        styles: {
-          ...node.styles,
-          [key]: value,
-        },
+        styles: setBuilderStyleForDevice(
+          node.styles,
+          key,
+          value as BuilderStyle[typeof key],
+          device,
+        ),
       })),
     );
   };
@@ -3649,7 +3703,15 @@ export default function UniversalBuilder({ target }: Props) {
         styles: {
           ...node.styles,
           [key]: {
-            ...(node.styles[key] || {}),
+            ...((node.styles[key] &&
+            typeof node.styles[key] === "object" &&
+            ("desktop" in (node.styles[key] as Record<string, unknown>) ||
+              "tablet" in (node.styles[key] as Record<string, unknown>) ||
+              "mobile" in (node.styles[key] as Record<string, unknown>))
+              ? node.styles[key]
+              : node.styles[key] !== undefined
+                ? { desktop: node.styles[key] }
+                : {}) as Record<string, unknown>),
             [device]: value,
           },
         },
@@ -3660,30 +3722,22 @@ export default function UniversalBuilder({ target }: Props) {
   const updateTypography = (
     key: keyof BuilderTypography,
     value: unknown,
-    responsive = false,
+    _responsive = false,
   ) => {
     if (!selectedId) return;
 
     commitRoot(
       updateTree(layout.root, selectedId, (node) => {
-        const typography = node.styles.typography || {};
-
-        const current = typography[key] as Record<string, unknown> | undefined;
-
+        const typography = resolveBuilderStyles(node.styles, device).typography || {};
+        const nextTypography = { ...typography, [key]: value } as BuilderTypography;
         return {
           ...node,
-          styles: {
-            ...node.styles,
-            typography: {
-              ...typography,
-              [key]: responsive
-                ? {
-                    ...(current || {}),
-                    [device]: value,
-                  }
-                : value,
-            } as BuilderTypography,
-          },
+          styles: setBuilderStyleForDevice(
+            node.styles,
+            "typography",
+            nextTypography,
+            device,
+          ),
         };
       }),
     );
@@ -3698,27 +3752,17 @@ export default function UniversalBuilder({ target }: Props) {
 
     commitRoot(
       updateTree(layout.root, selectedId, (node) => {
-        const current = hover
-          ? node.styles.backgroundHover || {}
-          : node.styles.background || {};
-
-        const nextBackground = {
-          ...current,
-          [key]: value,
-        };
-
+        const styleKey = hover ? "backgroundHover" : "background";
+        const current = resolveBuilderStyles(node.styles, device)[styleKey] || {};
+        const nextBackground = { ...current, [key]: value };
         return {
           ...node,
-          styles: {
-            ...node.styles,
-            ...(hover
-              ? {
-                  backgroundHover: nextBackground,
-                }
-              : {
-                  background: nextBackground,
-                }),
-          },
+          styles: setBuilderStyleForDevice(
+            node.styles,
+            styleKey,
+            nextBackground,
+            device,
+          ),
         };
       }),
     );
@@ -3730,16 +3774,21 @@ export default function UniversalBuilder({ target }: Props) {
     commitRoot(
       updateTree(layout.root, selectedId, (node) => {
         const key = hover ? "backgroundHover" : "background";
-        const current = node.styles[key] || {};
-        const next = Object.fromEntries(
-          Object.entries(current).filter(([property]) => !remove.has(property)),
-        ) as BuilderBackground;
+        const current = resolveBuilderStyles(node.styles, device)[key] || {};
+        // Empty values deliberately override the Desktop asset only on the
+        // currently selected device; omitting a key would inherit the image.
+        const next = { ...current } as BuilderBackground;
+        for (const property of remove) {
+          (next as Record<string, unknown>)[property] = "";
+        }
         return {
           ...node,
-          styles: {
-            ...node.styles,
-            [key]: next,
-          },
+          styles: setBuilderStyleForDevice(
+            node.styles,
+            key,
+            next,
+            device,
+          ),
         };
       }),
     );
@@ -3753,25 +3802,20 @@ export default function UniversalBuilder({ target }: Props) {
     if (!selectedId) return;
 
     commitRoot(
-      updateTree(layout.root, selectedId, (node) => ({
-        ...node,
-        styles: {
-          ...node.styles,
-          ...(hover
-            ? {
-                borderHover: {
-                  ...(node.styles.borderHover || {}),
-                  [key]: value,
-                },
-              }
-            : {
-                border: {
-                  ...(node.styles.border || {}),
-                  [key]: value,
-                },
-              }),
-        },
-      })),
+      updateTree(layout.root, selectedId, (node) => {
+        const styleKey = hover ? "borderHover" : "border";
+        const current = resolveBuilderStyles(node.styles, device)[styleKey] || {};
+        const nextBorder = { ...current, [key]: value };
+        return {
+          ...node,
+          styles: setBuilderStyleForDevice(
+            node.styles,
+            styleKey,
+            nextBorder,
+            device,
+          ),
+        };
+      }),
     );
   };
 
@@ -6385,7 +6429,7 @@ export default function UniversalBuilder({ target }: Props) {
               { label: "Full Width", value: "full" },
               { label: "Custom", value: "custom" },
             ]}
-            onChange={(value) => updateProps("contentWidth", value)}
+            onChange={(value) => updateResponsiveProp("contentWidth", value)}
           />
 
           <UnitControl
@@ -6393,7 +6437,7 @@ export default function UniversalBuilder({ target }: Props) {
             value={String(
               node.props.containerWidth || settings.containerWidth || "1200px",
             )}
-            onChange={(value) => updateProps("containerWidth", value)}
+            onChange={(value) => updateResponsiveProp("containerWidth", value)}
           />
 
           <SelectControl
@@ -6450,10 +6494,29 @@ export default function UniversalBuilder({ target }: Props) {
     const menuStyles = node.props.menuItemStyles && typeof node.props.menuItemStyles === "object"
       ? node.props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
       : {};
-    const menuDevice = menuStyles[device] || {};
+    const rawMenuDevice = menuStyles[device] || {};
+    const desktopMenuDevice = menuStyles.desktop || {};
+    const menuDevice = Object.fromEntries(
+      (["normal", "hover", "active"] as const).map((state) => [
+        state,
+        {
+          ...(desktopMenuDevice[state] || {}),
+          ...(rawMenuDevice[state] || {}),
+        },
+      ]),
+    ) as Record<string, Record<string, string>>;
     const activeMenuItemStyle = menuDevice[menuItemState] || {};
     const updateMenuItemStyle = (key: "color" | "backgroundColor", value: string) => {
-      const next = { ...menuStyles, [device]: { ...menuDevice, [menuItemState]: { ...activeMenuItemStyle, [key]: value } } };
+      const next = {
+        ...menuStyles,
+        [device]: {
+          ...rawMenuDevice,
+          [menuItemState]: {
+            ...(rawMenuDevice[menuItemState] || {}),
+            [key]: value,
+          },
+        },
+      };
       updateProps("menuItemStyles", next);
     };
 
@@ -6474,7 +6537,7 @@ export default function UniversalBuilder({ target }: Props) {
                 { label: "Center", value: "center" },
                 { label: "Right", value: "right" },
               ]}
-              onChange={(value) => updateProps("alignment", value)}
+              onChange={(value) => updateResponsiveProp("alignment", value)}
             />
             <UnitControl
               label="Width"
@@ -6498,7 +6561,7 @@ export default function UniversalBuilder({ target }: Props) {
                 label: value,
                 value,
               }))}
-              onChange={(value) => updateProps("objectFit", value)}
+              onChange={(value) => updateResponsiveProp("objectFit", value)}
             />
             <SelectControl
               label="Object Position"
@@ -6512,7 +6575,7 @@ export default function UniversalBuilder({ target }: Props) {
                 "right center",
                 "right bottom",
               ].map((value) => ({ label: value, value }))}
-              onChange={(value) => updateProps("objectPosition", value)}
+              onChange={(value) => updateResponsiveProp("objectPosition", value)}
             />
             <SegmentedControl
               label="Opacity State"
@@ -6593,67 +6656,73 @@ export default function UniversalBuilder({ target }: Props) {
               <input type="color" value={/^#[\da-f]{6}$/i.test(activeMenuItemStyle.backgroundColor || "") ? activeMenuItemStyle.backgroundColor : "#ffffff"} onChange={(event) => updateMenuItemStyle("backgroundColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
             </Field>
             <Field label="Mobile Menu Panel Background">
-              <input type="color" value={String(node.props.mobilePanelBackground || "#ffffff")} onChange={(event) => updateProps("mobilePanelBackground", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+              <input type="color" value={String(node.props.mobilePanelBackground || "#ffffff")} onChange={(event) => updateResponsiveProp("mobilePanelBackground", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
             </Field>
             <Field label="Mobile Menu Panel Text Color">
-              <input type="color" value={String(node.props.mobilePanelColor || "#1f2937")} onChange={(event) => updateProps("mobilePanelColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+              <input type="color" value={String(node.props.mobilePanelColor || "#1f2937")} onChange={(event) => updateResponsiveProp("mobilePanelColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
             </Field>
             <Field label="Mobile Toggle Icon Color">
-              <input type="color" value={String(node.props.iconColor || "#0c2f55")} onChange={(event) => updateProps("iconColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
+              <input type="color" value={String(node.props.iconColor || "#0c2f55")} onChange={(event) => updateResponsiveProp("iconColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
             </Field>
           </ControlGroup>
         ) : null}
         {(node.type === "icon" || node.type === "icon-box" || node.type === "icon-list" || node.type === "social-icons") ? (
           <ControlGroup title="Icon Styling" defaultOpen>
-            <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} />
-            <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || node.props.size || 24)} onChange={(value) => updateProps(node.type === "icon" ? "size" : "iconSize", Number(value))} />
-            {node.type === "social-icons" ? <><TextControl label="Icon Background" value={String(node.props.iconBackground || "#0c2f55")} onChange={(value) => updateProps("iconBackground", value)} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateProps("buttonSize", Number(value))} /></> : null}
+            <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+            <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || node.props.size || 24)} onChange={(value) => updateResponsiveProp(node.type === "icon" ? "size" : "iconSize", Number(value))} />
+            {node.type === "social-icons" ? <><TextControl label="Icon Background" value={String(node.props.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateResponsiveProp("buttonSize", Number(value))} /></> : null}
           </ControlGroup>
         ) : null}
         {(node.type === "tabs" || node.type === "post-tabs") ? (
           <ControlGroup title="Tabs Styling" defaultOpen>
-            <TextControl label="Normal Text Color" value={String(node.props.tabNormalColor || "#334155")} onChange={(value) => updateProps("tabNormalColor", value)} />
-            <TextControl label="Normal Background" value={String(node.props.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateProps("tabNormalBackground", value)} />
-            <TextControl label="Hover Text Color" value={String(node.props.tabHoverColor || "#0c2f55")} onChange={(value) => updateProps("tabHoverColor", value)} />
-            <TextControl label="Hover Background" value={String(node.props.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateProps("tabHoverBackground", value)} />
-            <TextControl label="Active Text Color" value={String(node.props.tabActiveColor || "#ffffff")} onChange={(value) => updateProps("tabActiveColor", value)} />
-            <TextControl label="Active Background" value={String(node.props.tabActiveBackground || "#0c2f55")} onChange={(value) => updateProps("tabActiveBackground", value)} />
+            <TextControl label="Normal Text Color" value={String(node.props.tabNormalColor || "#334155")} onChange={(value) => updateResponsiveProp("tabNormalColor", value)} />
+            <TextControl label="Normal Background" value={String(node.props.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateResponsiveProp("tabNormalBackground", value)} />
+            <TextControl label="Hover Text Color" value={String(node.props.tabHoverColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabHoverColor", value)} />
+            <TextControl label="Hover Background" value={String(node.props.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateResponsiveProp("tabHoverBackground", value)} />
+            <TextControl label="Active Text Color" value={String(node.props.tabActiveColor || "#ffffff")} onChange={(value) => updateResponsiveProp("tabActiveColor", value)} />
+            <TextControl label="Active Background" value={String(node.props.tabActiveBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabActiveBackground", value)} />
           </ControlGroup>
         ) : null}
         {(node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel" || node.type === "post-tabs") ? (
           <ControlGroup title="Post Cards Styling" defaultOpen>
-            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateProps("cardBackground", value)} />
-            <TextControl label="Card Border Color" value={String(node.props.cardBorderColor || "#e2e8f0")} onChange={(value) => updateProps("cardBorderColor", value)} />
-            <UnitControl label="Card Border Radius" value={String(node.props.cardRadius || "8px")} onChange={(value) => updateProps("cardRadius", value)} />
-            <UnitControl label="Grid / Card Gap" value={String(node.props.gap || "18px")} onChange={(value) => updateProps("gap", value)} />
-            <UnitControl label="Image Height" value={String(node.props.imageHeight || "180px")} onChange={(value) => updateProps("imageHeight", value)} />
+            <TextControl
+              label="Columns on this device"
+              type="number"
+              value={String(node.props.columns || (node.type === "post-tabs" ? 2 : 3))}
+              onChange={(value) => updateResponsiveProp("columns", Math.max(1, Math.min(6, Number(value) || 1)))}
+            />
+            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
+            <TextControl label="Card Border Color" value={String(node.props.cardBorderColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
+            <UnitControl label="Card Border Radius" value={String(node.props.cardRadius || "8px")} onChange={(value) => updateResponsiveProp("cardRadius", value)} />
+            <UnitControl label="Grid / Card Gap" value={String(node.props.gap || "18px")} onChange={(value) => updateResponsiveProp("gap", value)} />
+            <UnitControl label="Image Height" value={String(node.props.imageHeight || "180px")} onChange={(value) => updateResponsiveProp("imageHeight", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "price-table" ? (
           <ControlGroup title="Pricing Card Styling" defaultOpen>
-            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateProps("cardBackground", value)} />
-            <TextControl label="Card Border" value={String(node.props.cardBorderColor || "#dbe3ed")} onChange={(value) => updateProps("cardBorderColor", value)} />
-            <TextControl label="Title Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateProps("titleColor", value)} />
-            <TextControl label="Price Color" value={String(node.props.priceColor || "#3984e8")} onChange={(value) => updateProps("priceColor", value)} />
-            <TextControl label="Button Background" value={String(node.props.buttonBackground || "#0c2f55")} onChange={(value) => updateProps("buttonBackground", value)} />
-            <TextControl label="Button Text Color" value={String(node.props.buttonColor || "#ffffff")} onChange={(value) => updateProps("buttonColor", value)} />
+            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
+            <TextControl label="Card Border" value={String(node.props.cardBorderColor || "#dbe3ed")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
+            <TextControl label="Title Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
+            <TextControl label="Price Color" value={String(node.props.priceColor || "#3984e8")} onChange={(value) => updateResponsiveProp("priceColor", value)} />
+            <TextControl label="Button Background" value={String(node.props.buttonBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("buttonBackground", value)} />
+            <TextControl label="Button Text Color" value={String(node.props.buttonColor || "#ffffff")} onChange={(value) => updateResponsiveProp("buttonColor", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "accordion" ? (
           <ControlGroup title="Accordion Styling" defaultOpen>
-            <TextControl label="Title Text Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateProps("titleColor", value)} />
-            <TextControl label="Title Background" value={String(node.props.titleBackground || "#f8fafc")} onChange={(value) => updateProps("titleBackground", value)} />
-            <TextControl label="Content Text Color" value={String(node.props.contentColor || "#334155")} onChange={(value) => updateProps("contentColor", value)} />
-            <TextControl label="Content Background" value={String(node.props.contentBackground || "#ffffff")} onChange={(value) => updateProps("contentBackground", value)} />
-            <TextControl label="Divider Color" value={String(node.props.dividerColor || "#e2e8f0")} onChange={(value) => updateProps("dividerColor", value)} />
+            <TextControl label="Title Text Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
+            <TextControl label="Title Background" value={String(node.props.titleBackground || "#f8fafc")} onChange={(value) => updateResponsiveProp("titleBackground", value)} />
+            <TextControl label="Content Text Color" value={String(node.props.contentColor || "#334155")} onChange={(value) => updateResponsiveProp("contentColor", value)} />
+            <TextControl label="Content Background" value={String(node.props.contentBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("contentBackground", value)} />
+            <TextControl label="Divider Color" value={String(node.props.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "countdown" ? (
           <ControlGroup title="Countdown Styling" defaultOpen>
-            <TextControl label="Number Color" value={String(node.props.numberColor || "#ffffff")} onChange={(value) => updateProps("numberColor", value)} />
-            <TextControl label="Label Color" value={String(node.props.labelColor || "#ffffff")} onChange={(value) => updateProps("labelColor", value)} />
-            <TextControl label="Box Background" value={String(node.props.boxBackground || "#0c2f55")} onChange={(value) => updateProps("boxBackground", value)} />
-            <UnitControl label="Box Radius" value={String(node.props.boxRadius || "8px")} onChange={(value) => updateProps("boxRadius", value)} />
+            <TextControl label="Number Color" value={String(node.props.numberColor || "#ffffff")} onChange={(value) => updateResponsiveProp("numberColor", value)} />
+            <TextControl label="Label Color" value={String(node.props.labelColor || "#ffffff")} onChange={(value) => updateResponsiveProp("labelColor", value)} />
+            <TextControl label="Box Background" value={String(node.props.boxBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("boxBackground", value)} />
+            <UnitControl label="Box Radius" value={String(node.props.boxRadius || "8px")} onChange={(value) => updateResponsiveProp("boxRadius", value)} />
           </ControlGroup>
         ) : null}
         <ControlGroup title="Text Color" defaultOpen>
@@ -8106,6 +8175,19 @@ export default function UniversalBuilder({ target }: Props) {
 
                 {selectedNode ? (
                   <>
+                    <div
+                      style={{
+                        marginBottom: 10,
+                        padding: "8px 10px",
+                        borderRadius: 6,
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Editing {device}. Desktop is the base; Tablet and Mobile save independent overrides.
+                    </div>
                     <div
                       style={{
                         display: "grid",

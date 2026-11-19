@@ -343,7 +343,13 @@ export type BuilderStyle = {
 
   motion?: BuilderMotion;
   customCss?: string;
+
+  /** Device-specific visual overrides. Tablet and Mobile inherit from Desktop
+   * unless a value is explicitly set for that device. */
+  responsive?: Partial<Record<BuilderDevice, BuilderStyleResponsiveOverride>>;
 };
+
+export type BuilderStyleResponsiveOverride = Partial<Omit<BuilderStyle, "responsive">>;
 
 export type BuilderAdvancedSettings = {
   cssId?: string;

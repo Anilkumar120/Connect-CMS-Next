@@ -11,6 +11,10 @@ import {
   builderSpacingCss,
   combineBuilderSpacing,
 } from "@/lib/builder/spacing";
+import {
+  getResponsiveBuilderPropOverrides,
+  resolveBuilderStyles,
+} from "@/lib/builder/responsive";
 import PublicNavigationMenu, {
   type PublicNavigationMenuItem,
 } from "./PublicNavigationMenu";
@@ -52,13 +56,16 @@ function safeUrl(value: unknown, image = false): string {
 }
 
 function responsive<T>(
-  value: T | { desktop?: T; tablet?: T; mobile?: T } | undefined
+  value: T | { desktop?: T; tablet?: T; mobile?: T } | undefined,
+  device: "desktop" | "tablet" | "mobile" = "desktop",
 ): T | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || typeof value !== "object" || !("desktop" in value)) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) return value as T;
+  const record = value as { desktop?: T; tablet?: T; mobile?: T };
+  if (!("desktop" in record || "tablet" in record || "mobile" in record)) {
     return value as T;
   }
-  return value.desktop as T | undefined;
+  return record[device] ?? record.desktop;
 }
 
 function responsiveOverride<T>(
@@ -76,11 +83,14 @@ function responsiveOverride<T>(
   return value[device] as T | undefined;
 }
 
-function backgroundStyle(background: BuilderStyle["background"]): CSSProperties {
+function backgroundStyle(
+  background: BuilderStyle["background"],
+  device: "desktop" | "tablet" | "mobile" = "desktop",
+): CSSProperties {
   if (!background) return {};
   const style: CSSProperties = {};
 
-  if (background.color) style.backgroundColor = responsive(background.color);
+  if (background.color) style.backgroundColor = responsive(background.color, device);
   if (background.type === "gradient" && background.gradient) {
     const gradient = background.gradient;
     const stops = gradient.stops?.length
@@ -111,7 +121,11 @@ function backgroundStyle(background: BuilderStyle["background"]): CSSProperties 
       style.backgroundImage = layers.join(", ");
     }
   }
-  if (background.position) style.backgroundPosition = background.position;
+  if (background.positionX || background.positionY) {
+    style.backgroundPosition = `${responsive(background.positionX, device) || "50%"} ${responsive(background.positionY, device) || "50%"}`;
+  } else if (background.position) {
+    style.backgroundPosition = background.position;
+  }
   if (background.size) style.backgroundSize = background.size;
   if (background.repeat) {
     style.backgroundRepeat = background.repeat as CSSProperties["backgroundRepeat"];
@@ -124,7 +138,7 @@ function backgroundStyle(background: BuilderStyle["background"]): CSSProperties 
 
 function nodeStyle(node: BuilderNode): CSSProperties {
   const style: Record<string, string | number | undefined> = {};
-  const s = node.styles;
+  const s = resolveBuilderStyles(node.styles, "desktop");
   const put = (key: string, value: unknown) => {
     if (typeof value === "string" || typeof value === "number") {
       style[key] = value;
@@ -189,6 +203,8 @@ function nodeStyle(node: BuilderNode): CSSProperties {
     put("animationTimingFunction", s.motion.animationEasing || "ease");
     put("animationFillMode", "both");
   }
+  if (node.advanced?.hideOnDesktop) style.display = "none";
+
   const widthMode = responsive(node.advanced?.widthMode);
   if (widthMode === "inline") put("width", "fit-content");
   if (widthMode === "full") put("width", "100%");
@@ -236,7 +252,7 @@ function nodeStyle(node: BuilderNode): CSSProperties {
     put("WebkitTextStroke", s.typography.textStroke);
   }
 
-  Object.assign(style, backgroundStyle(s.background));
+  Object.assign(style, backgroundStyle(s.background, "desktop"));
   if (s.mask?.enabled) {
     const masks: Record<string, string> = {
       circle: "circle(50% at 50% 50%)",
@@ -302,6 +318,9 @@ function layoutChildrenStyle(node: BuilderNode): CSSProperties {
     childrenStyle.maxWidth = String(node.props.containerWidth || "1200px");
     childrenStyle.marginLeft = "auto";
     childrenStyle.marginRight = "auto";
+  } else if (node.type === "section") {
+    childrenStyle.width = "100%";
+    childrenStyle.maxWidth = "none";
   }
 
   return childrenStyle;
@@ -310,180 +329,260 @@ function layoutChildrenStyle(node: BuilderNode): CSSProperties {
 function responsiveCssValue(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
   const normalized = String(value).trim();
-  return /^[\w\s#.,%()+/-]+$/.test(normalized) ? normalized : undefined;
+  if (!normalized || /[;{}<>]/.test(normalized)) return undefined;
+  return /^[\w\s#.,%()+/:'"-]+$/.test(normalized) ? normalized : undefined;
+}
+
+function cssPropertyName(property: string): string {
+  if (property.startsWith("Webkit")) {
+    return `-webkit-${property.slice(6).replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+  }
+  return property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
 function responsiveCss(nodes: BuilderNode[]): string {
   const rules: string[] = [];
-  const layoutTypes = ["section", "container", "row", "column", "grid"];
+  const layoutTypes = new Set(["section", "container", "row", "column", "grid"]);
+
   const collect = (node: BuilderNode) => {
-    const style = node.styles;
-    const declarations = (
-      device: "tablet" | "mobile",
-    ): Array<[string, string]> => {
-      const style = node.styles;
-      const entries: Array<[string, string | undefined]> = [
-        ["width", responsiveCssValue(style.width?.[device])],
-        ["height", responsiveCssValue(style.height?.[device])],
-        ["min-width", responsiveCssValue(style.minWidth?.[device])],
-        ["max-width", responsiveCssValue(style.maxWidth?.[device])],
-        ["min-height", responsiveCssValue(style.minHeight?.[device])],
-        ["max-height", responsiveCssValue(style.maxHeight?.[device])],
-        ["display", layoutTypes.includes(node.type) ? undefined : responsiveCssValue(style.display?.[device])],
-        ["align-self", responsiveCssValue(style.alignSelf?.[device])],
-        ["flex-grow", responsiveCssValue(style.flexGrow?.[device])],
-        ["flex-shrink", responsiveCssValue(style.flexShrink?.[device])],
-        ["flex-basis", responsiveCssValue(style.flexBasis?.[device])],
-        ["order", responsiveCssValue(style.order?.[device])],
-        ["top", responsiveCssValue(style.top?.[device])],
-        ["right", responsiveCssValue(style.right?.[device])],
-        ["bottom", responsiveCssValue(style.bottom?.[device])],
-        ["left", responsiveCssValue(style.left?.[device])],
-        ["gap", layoutTypes.includes(node.type) || node.type === "menu" ? undefined : responsiveCssValue(style.gap?.[device])],
-        ["--builder-menu-gap", node.type === "menu" ? responsiveCssValue(style.gap?.[device]) : undefined],
-        ["font-size", responsiveCssValue(style.typography?.fontSize?.[device])],
-        ["text-align", responsiveCssValue(style.typography?.textAlign?.[device])],
-        ["border-radius", responsiveCssValue(style.border?.radius?.[device])],
-        ["color", responsiveCssValue(responsiveOverride(style.color, device))],
-        [
-          "background-color",
-          responsiveCssValue(responsiveOverride(style.background?.color, device)),
-        ],
-        [
-          "border-color",
-          responsiveCssValue(responsiveOverride(style.border?.color, device)),
-        ],
-      ];
+    const selector = `[data-builder-node-id=${JSON.stringify(node.id)}]`;
+
+    for (const device of ["tablet", "mobile"] as const) {
+      const style = resolveBuilderStyles(node.styles, device);
+      const root = new Map<string, string>();
+      const layout = new Map<string, string>();
+      const hover = new Map<string, string>();
+
+      const add = (target: Map<string, string>, property: string, value: unknown) => {
+        const resolvedValue =
+          value && typeof value === "object" && !Array.isArray(value)
+            ? responsive(
+                value as { desktop?: unknown; tablet?: unknown; mobile?: unknown },
+                device,
+              )
+            : value;
+        const cssValue = responsiveCssValue(resolvedValue);
+        if (cssValue !== undefined) target.set(property, cssValue);
+      };
+
+      // Common Style-tab controls. The exact same controls are edited for each
+      // device; values not overridden on Tablet/Mobile continue from Desktop.
+      for (const [property, value] of Object.entries({
+        width: style.width,
+        height: style.height,
+        minWidth: style.minWidth,
+        maxWidth: style.maxWidth,
+        minHeight: style.minHeight,
+        maxHeight: style.maxHeight,
+        display: layoutTypes.has(node.type) ? undefined : style.display,
+        alignSelf: style.alignSelf,
+        flexGrow: style.flexGrow,
+        flexShrink: style.flexShrink,
+        flexBasis: style.flexBasis,
+        order: style.order,
+        top: style.top,
+        right: style.right,
+        bottom: style.bottom,
+        left: style.left,
+        color: style.color,
+        boxShadow: style.boxShadow,
+        opacity: style.opacity,
+        zIndex: style.zIndex,
+        overflow: style.overflow,
+        position: style.position === "default" ? undefined : style.position,
+        transform: style.transform || transformCss(style.transformSettings),
+        transformOrigin: style.transformSettings?.origin,
+        transition: style.transition,
+        transitionDuration: style.transitionDuration,
+      })) {
+        add(root, cssPropertyName(property), value);
+      }
+
+      const typography = style.typography;
+      if (typography) {
+        for (const [property, value] of Object.entries({
+          fontFamily: typography.fontFamily,
+          fontSize: typography.fontSize,
+          fontWeight: typography.fontWeight,
+          lineHeight: typography.lineHeight,
+          letterSpacing: typography.letterSpacing,
+          wordSpacing: typography.wordSpacing,
+          fontStyle: typography.fontStyle,
+          textTransform: typography.textTransform,
+          textDecoration: typography.textDecoration,
+          textAlign: typography.textAlign,
+          textShadow: typography.textShadow,
+          WebkitTextStroke: typography.textStroke,
+        })) {
+          add(root, cssPropertyName(property), value);
+        }
+      }
+
+      const border = style.border;
+      if (border) {
+        add(root, "border-style", border.style);
+        add(root, "border-width", border.width);
+        add(root, "border-color", border.color);
+        add(root, "border-radius", border.radius);
+      }
+
+      const background = backgroundStyle(style.background, device);
+      for (const [property, value] of Object.entries(background)) {
+        add(root, cssPropertyName(property), value);
+      }
+
+      if (style.mask?.enabled) {
+        const masks: Record<string, string> = {
+          circle: "circle(50% at 50% 50%)",
+          ellipse: "ellipse(50% 40% at 50% 50%)",
+          rounded: "inset(0 round 20%)",
+          triangle: "polygon(50% 0, 0 100%, 100% 100%)",
+          "triangle-down": "polygon(0 0, 100% 0, 50% 100%)",
+          diamond: "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)",
+          pentagon: "polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%)",
+          hexagon: "polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)",
+          star: "polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 95%, 50% 72%, 21% 95%, 32% 57%, 2% 35%, 39% 35%)",
+        };
+        add(root, "clip-path", masks[style.mask.shape || "circle"] || masks.circle);
+      }
+
+      if (style.filters) {
+        const filters = style.filters;
+        const filterValue = [
+          filters.blur ? `blur(${filters.blur}px)` : "",
+          filters.brightness !== undefined ? `brightness(${filters.brightness}%)` : "",
+          filters.contrast !== undefined ? `contrast(${filters.contrast}%)` : "",
+          filters.saturation !== undefined ? `saturate(${filters.saturation}%)` : "",
+          filters.hue ? `hue-rotate(${filters.hue}deg)` : "",
+          filters.grayscale ? `grayscale(${filters.grayscale}%)` : "",
+          filters.sepia ? `sepia(${filters.sepia}%)` : "",
+          filters.invert ? `invert(${filters.invert}%)` : "",
+        ].filter(Boolean).join(" ");
+        add(root, "filter", filterValue);
+      }
+
+      const padding = builderSpacingCss(
+        combineBuilderSpacing(responsive(style.padding, device), responsive(style.stylePadding, device)),
+      );
+      const margin = builderSpacingCss(
+        combineBuilderSpacing(responsive(style.margin, device), responsive(style.styleMargin, device)),
+      );
+      add(root, "padding", padding);
+      add(root, "margin", margin);
+
+      if (layoutTypes.has(node.type)) {
+        add(layout, "display", style.display || (node.type === "grid" ? "grid" : "flex"));
+        add(layout, "flex-direction", style.direction || (node.type === "row" ? "row" : "column"));
+        add(layout, "justify-content", style.justifyContent);
+        add(layout, "align-items", style.alignItems);
+        add(layout, "align-content", style.alignContent);
+        add(layout, "flex-wrap", style.flexWrap);
+        add(layout, "gap", style.gap);
+        add(layout, "row-gap", style.rowGap);
+        add(layout, "column-gap", style.columnGap);
+        add(layout, "grid-template-columns", style.gridTemplateColumns);
+        add(layout, "grid-template-rows", style.gridTemplateRows);
+        add(layout, "grid-auto-columns", style.gridAutoColumns);
+        add(layout, "grid-auto-rows", style.gridAutoRows);
+        add(layout, "grid-auto-flow", style.gridAutoFlow);
+      } else {
+        add(root, "gap", style.gap);
+      }
+
       const widthMode = node.advanced?.widthMode;
       const deviceWidthMode =
         typeof widthMode === "string"
           ? widthMode
           : widthMode?.[device] ?? widthMode?.desktop;
-      if (deviceWidthMode === "inline") {
-        entries.push(["width", "fit-content"]);
-      } else if (deviceWidthMode === "full") {
-        entries.push(["width", "100%"]);
-      } else if (deviceWidthMode === "default") {
-        entries.push(["width", "auto"]);
-      } else if (deviceWidthMode === "custom") {
-        entries.push([
-          "width",
-          responsiveCssValue(style.width?.[device] ?? style.width?.desktop),
+      if (deviceWidthMode === "inline") root.set("width", "fit-content");
+      else if (deviceWidthMode === "full") root.set("width", "100%");
+      else if (deviceWidthMode === "default") root.set("width", "auto");
+      else if (deviceWidthMode === "custom") add(root, "width", style.width);
+
+      // Section boxed/full-width settings are responsive Layout controls.
+      if (node.type === "section") {
+        const propOverrides = getResponsiveBuilderPropOverrides(node, device);
+        if (Object.prototype.hasOwnProperty.call(propOverrides, "contentWidth")) {
+          const contentWidth = propOverrides.contentWidth;
+          if (contentWidth === "full") {
+            add(layout, "max-width", "none");
+          } else {
+            const width = propOverrides.containerWidth ?? node.props.containerWidth ?? "1200px";
+            add(layout, "max-width", width);
+          }
+        } else if (Object.prototype.hasOwnProperty.call(propOverrides, "containerWidth")) {
+          add(layout, "max-width", propOverrides.containerWidth);
+        }
+        if (Object.prototype.hasOwnProperty.call(propOverrides, "contentWidth") ||
+            Object.prototype.hasOwnProperty.call(propOverrides, "containerWidth")) {
+          add(layout, "width", "100%");
+          add(layout, "margin-left", "auto");
+          add(layout, "margin-right", "auto");
+        }
+      }
+
+      // Widget-specific visual settings (Content values remain shared).
+      for (const [key, value] of Object.entries(getResponsiveBuilderPropOverrides(node, device))) {
+        if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key)) continue;
+        const pixelProperties = new Set([
+          "size",
+          "iconSize",
+          "buttonSize",
+          "mobileIconSize",
         ]);
+        const normalizedValue =
+          typeof value === "number" && pixelProperties.has(key)
+            ? `${value}px`
+            : value;
+        const cssValue = responsiveCssValue(normalizedValue);
+        if (cssValue !== undefined) root.set(`--builder-prop-${key}`, cssValue);
       }
-      entries.push(
-        [
-          "padding",
-          responsiveCssValue(
-            builderSpacingCss(
-              combineBuilderSpacing(
-                style.padding?.[device],
-                style.stylePadding?.[device],
-              ),
-            ),
-          ),
-        ],
-        [
-          "margin",
-          responsiveCssValue(
-            builderSpacingCss(
-              combineBuilderSpacing(
-                style.margin?.[device],
-                style.styleMargin?.[device],
-              ),
-            ),
-          ),
-        ],
-      );
-      return entries.filter(
-        (entry): entry is [string, string] => Boolean(entry[1]),
-      );
-    };
-    const layoutDeclarations = (
-      device: "tablet" | "mobile",
-    ): Array<[string, string]> => {
-      if (!layoutTypes.includes(node.type)) return [];
-      const style = node.styles;
-      const entries: Array<[string, string | undefined]> = [
-        ["display", responsiveCssValue(style.display?.[device])],
-        ["flex-direction", responsiveCssValue(style.direction?.[device])],
-        ["justify-content", responsiveCssValue(style.justifyContent?.[device])],
-        ["align-items", responsiveCssValue(style.alignItems?.[device])],
-        ["align-content", responsiveCssValue(style.alignContent?.[device])],
-        ["flex-wrap", responsiveCssValue(style.flexWrap?.[device])],
-        ["gap", responsiveCssValue(style.gap?.[device])],
-        ["row-gap", responsiveCssValue(style.rowGap?.[device])],
-        ["column-gap", responsiveCssValue(style.columnGap?.[device])],
-        ["grid-template-columns", responsiveCssValue(style.gridTemplateColumns?.[device])],
-        ["grid-template-rows", responsiveCssValue(style.gridTemplateRows?.[device])],
-        ["grid-auto-columns", responsiveCssValue(style.gridAutoColumns?.[device])],
-        ["grid-auto-rows", responsiveCssValue(style.gridAutoRows?.[device])],
-        ["grid-auto-flow", responsiveCssValue(style.gridAutoFlow?.[device])],
-      ];
-      return entries.filter(
-        (entry): entry is [string, string] => Boolean(entry[1]),
-      );
-    };
-    const selector = `[data-builder-node-id=${JSON.stringify(node.id)}]`;
-    if (node.advanced?.hideOnDesktop) {
-      rules.push(`${selector}{display:none!important}`);
-    }
-    for (const device of ["tablet", "mobile"] as const) {
-      const cssDeclarations = declarations(device);
+
+      // Device visibility is independent. If Desktop is hidden but this device
+      // is visible, explicitly restore the node's normal display value.
       if (device === "tablet" && node.advanced?.hideOnTablet) {
-        cssDeclarations.push(["display", "none"]);
+        root.set("display", "none");
+      } else if (device === "mobile" && node.advanced?.hideOnMobile) {
+        root.set("display", "none");
+      } else if (node.advanced?.hideOnDesktop) {
+        root.set("display", layoutTypes.has(node.type) ? "block" : responsive(style.display, device) || "block");
       }
-      if (device === "mobile" && node.advanced?.hideOnMobile) {
-        cssDeclarations.push(["display", "none"]);
+
+      if (style.colorHover !== undefined) add(hover, "color", style.colorHover);
+      if (style.backgroundHover) {
+        const hoverBackground = backgroundStyle(style.backgroundHover, device);
+        if (hoverBackground.backgroundColor !== undefined) add(hover, "background-color", hoverBackground.backgroundColor);
+        if (hoverBackground.backgroundImage !== undefined) add(hover, "background-image", hoverBackground.backgroundImage);
       }
-      const layoutStyle = layoutDeclarations(device);
-      if (!cssDeclarations.length && !layoutStyle.length) continue;
-      const media =
-        device === "tablet"
-          ? "@media (min-width: 768px) and (max-width: 1024px)"
-          : "@media (max-width: 767px)";
-      const rootDeclarations = cssDeclarations
-        .map(([property, value]) => `${property}:${value}!important`)
-        .join(";");
-      const imageDeclarations = cssDeclarations
-        .filter(([property]) =>
-          ["width", "height", "min-width", "max-width", "min-height", "max-height", "padding", "margin"].includes(property),
-        )
-        .map(([property, value]) => `${property}:${value}!important`)
-        .join(";");
-      const selectors = [`${selector}{${rootDeclarations}}`];
-      const hoverDeclarations = [
-        ["color", responsiveCssValue(responsiveOverride(style.colorHover, device))],
-        [
-          "background-color",
-          responsiveCssValue(responsiveOverride(style.backgroundHover?.color, device)),
-        ],
-        [
-          "border-color",
-          responsiveCssValue(responsiveOverride(style.borderHover?.color, device)),
-        ],
-      ].filter((entry): entry is [string, string] => Boolean(entry[1]));
-      if (hoverDeclarations.length) {
-        selectors.push(
-          `${selector}:hover{${hoverDeclarations
-            .map(([property, value]) => `${property}:${value}!important`)
-            .join(";")}}`,
-        );
+      if (style.borderHover) {
+        add(hover, "border-color", style.borderHover.color);
+        add(hover, "border-width", style.borderHover.width);
+        add(hover, "border-radius", style.borderHover.radius);
+        add(hover, "border-style", style.borderHover.style);
       }
-      if (layoutStyle.length) {
-        selectors.push(
-          `[data-builder-layout-children=${JSON.stringify(node.id)}]{${layoutStyle
-            .map(([property, value]) => `${property}:${value}!important`)
-            .join(";")}}`,
-        );
+      if (style.boxShadowHover !== undefined) add(hover, "box-shadow", style.boxShadowHover);
+      if (style.opacityHover !== undefined) add(hover, "opacity", style.opacityHover);
+
+      const media = device === "tablet"
+        ? "@media (min-width: 768px) and (max-width: 1024px)"
+        : "@media (max-width: 767px)";
+      const selectors: string[] = [];
+      if (root.size) {
+        selectors.push(`${selector}{${[...root.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
       }
-      if (imageDeclarations && ["image", "featured-image", "site-logo"].includes(node.type)) {
-        selectors.push(`${selector} img{${imageDeclarations}}`);
+      if (hover.size) {
+        selectors.push(`${selector}:hover{${[...hover.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
       }
-      rules.push(`${media}{${selectors.join("")}}`);
+      if (layout.size) {
+        selectors.push(`[data-builder-layout-children=${JSON.stringify(node.id)}]{${[...layout.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
+      }
+
+      if (selectors.length) rules.push(`${media}{${selectors.join("")}}`);
     }
+
     node.children?.forEach(collect);
   };
+
   nodes.forEach(collect);
   return rules.join("\n");
 }
@@ -646,6 +745,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   };
   const stringProp = (key: string, fallback = "") =>
     typeof props[key] === "string" ? (props[key] as string) : fallback;
+  const styleProp = (key: string, fallback: string) =>
+    `var(--builder-prop-${key}, ${fallback})`;
   const link = (value: unknown) => safeUrl(value) || "#";
 
   if (["section", "container", "row", "column", "grid"].includes(node.type)) {
@@ -772,17 +873,17 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const objectFit = ["contain", "cover", "fill", "none"].includes(String(props.objectFit))
       ? String(props.objectFit) as CSSProperties["objectFit"]
       : "cover";
-    const img = <img src={src} alt={stringProp("alt")} title={stringProp("title") || undefined} style={{ ...style, width: style.width || (node.type === "site-logo" ? stringProp("width", "180px") : undefined), height: style.height || (node.type === "site-logo" ? stringProp("height", "auto") : undefined), maxWidth: "100%", objectFit, objectPosition: stringProp("objectPosition", "center center") }} />;
+    const img = <img src={src} alt={stringProp("alt")} title={stringProp("title") || undefined} style={{ ...style, width: style.width || (node.type === "site-logo" ? stringProp("width", "180px") : undefined), height: style.height || (node.type === "site-logo" ? stringProp("height", "auto") : undefined), maxWidth: "100%", objectFit: styleProp("objectFit", String(objectFit || "cover")) as CSSProperties["objectFit"], objectPosition: styleProp("objectPosition", stringProp("objectPosition", "center center")) }} />;
     const target = props.linkTarget === "_blank" ? "_blank" : undefined;
-    return <figure key={node.id} {...common} style={{ ...style, margin: 0, padding: 0 }}>{props.link ? <a href={link(props.link)} target={target} rel={target ? "noopener noreferrer" : undefined}>{img}</a> : img}{props.caption ? <figcaption>{stringProp("caption")}</figcaption> : null}</figure>;
+    return <figure key={node.id} {...common} style={{ ...style, margin: 0, padding: 0, textAlign: styleProp("alignment", stringProp("alignment", "left")) as CSSProperties["textAlign"] }}>{props.link ? <a href={link(props.link)} target={target} rel={target ? "noopener noreferrer" : undefined}>{img}</a> : img}{props.caption ? <figcaption>{stringProp("caption")}</figcaption> : null}</figure>;
   }
   if (node.type === "icon") {
     const Icon = themeIcons[stringProp("iconName")];
     const src = imageUrl(props.iconImage || props.src);
     const size = Math.max(8, Math.min(240, Number(props.size || 24)));
     return (
-      <span key={node.id} {...common} style={{ ...style, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size, color: stringProp("color", "#0c2f55") }}>
-        {src ? <img src={src} alt={stringProp("alt")} width={size} height={size} style={{ width: size, height: size, objectFit: "contain" }} /> : Icon ? <Icon size={size} strokeWidth={Number(props.strokeWidth || 2)} /> : stringProp("symbol", "★")}
+      <span key={node.id} {...common} style={{ ...style, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: styleProp("size", `${size}px`), color: styleProp("iconColor", stringProp("iconColor", stringProp("color", "#0c2f55"))) }}>
+        {src ? <img src={src} alt={stringProp("alt")} width={size} height={size} style={{ width: styleProp("size", `${size}px`), height: styleProp("size", `${size}px`), objectFit: "contain" }} /> : Icon ? <Icon size={size} style={{ width: styleProp("size", `${size}px`), height: styleProp("size", `${size}px`), color: styleProp("iconColor", stringProp("iconColor", "#0c2f55")) }} strokeWidth={Number(props.strokeWidth || 2)} /> : stringProp("symbol", "★")}
       </span>
     );
   }
@@ -791,20 +892,23 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const Icon = themeIcons[stringProp("iconName")];
     const iconSrc = imageUrl(props.iconImage);
     const iconSize = Math.max(12, Math.min(160, Number(props.iconSize || 40)));
-    const icon = iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: iconSize, height: iconSize, objectFit: "contain" }} /> : Icon ? <Icon size={iconSize} color={stringProp("iconColor", "#3984e8")} /> : <span style={{ fontSize: iconSize, color: stringProp("iconColor", "#3984e8") }}>{stringProp("symbol", "★")}</span>;
+    const responsiveIconSize = styleProp("iconSize", `${iconSize}px`);
+    const responsiveIconColor = styleProp("iconColor", stringProp("iconColor", "#3984e8"));
+    const icon = iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, color: responsiveIconColor }} /> : <span style={{ fontSize: responsiveIconSize, color: responsiveIconColor }}>{stringProp("symbol", "★")}</span>;
     const content = <div><h3>{stringProp("title", "Feature Title")}</h3><p>{stringProp("description")}</p></div>;
     return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column", alignItems: position === "top" ? "center" : "flex-start", gap: 12 }}>{icon}{content}</div>;
   }
   if (node.type === "icon-list") {
     const items = Array.isArray(props.items) ? props.items : [];
     const iconSize = Math.max(8, Math.min(80, Number(props.iconSize || 16)));
-    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: stringProp("itemSpacing", "12px") }}>
+    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: styleProp("itemSpacing", stringProp("itemSpacing", "12px")) }}>
       {items.map((raw, index) => {
         if (!raw || typeof raw !== "object") return null;
         const item = raw as Record<string, unknown>;
         const Icon = themeIcons[String(item.iconName || "Check")];
         const iconSrc = imageUrl(item.iconImage);
-        const content = <><span style={{ display: "inline-flex", flex: "0 0 auto", color: stringProp("iconColor", "#3984e8") }}>{iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} /> : Icon ? <Icon size={iconSize} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>;
+        const responsiveIconSize = styleProp("iconSize", `${iconSize}px`);
+        const content = <><span style={{ display: "inline-flex", flex: "0 0 auto", color: styleProp("iconColor", stringProp("iconColor", "#3984e8")) }}>{iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize }} /> : Icon ? <Icon size={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, color: styleProp("iconColor", stringProp("iconColor", "#3984e8")) }} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>;
         const href = safeUrl(item.url);
         return <li key={String(item.id || index)} style={{ display: "flex", alignItems: "center", gap: 9, borderBottom: props.divider ? "1px solid #e2e8f0" : undefined, paddingBottom: props.divider ? 8 : undefined }}>{href && href !== "#" ? <a href={href} style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 9 }}>{content}</a> : content}</li>;
       })}
@@ -820,9 +924,9 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         title={stringProp("title") || undefined}
         style={{
           maxWidth: "100%",
-          objectFit: ["contain", "cover", "fill", "none"].includes(String(props.objectFit))
-            ? String(props.objectFit) as CSSProperties["objectFit"]
-            : "cover",
+          objectFit: styleProp("objectFit", ["contain", "cover", "fill", "none"].includes(String(props.objectFit))
+            ? String(props.objectFit)
+            : "cover") as CSSProperties["objectFit"],
         }}
       />
     ) : null;
@@ -864,12 +968,12 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         iconSize={Number(props.mobileIconSize || 24)}
         itemPadding={stringProp("itemPadding")}
         itemIconName={stringProp("itemIconName")}
-        iconColor={stringProp("iconColor", "#0c2f55")}
+        iconColor={styleProp("iconColor", stringProp("iconColor", "#0c2f55"))}
         menuId={stringProp("menuId")}
         menuLocation={stringProp("menuLocation", "HEADER")}
         menuItemStyles={props.menuItemStyles as import("./PublicNavigationMenu").ResponsiveMenuItemStyles}
-        mobilePanelBackground={stringProp("mobilePanelBackground", "#ffffff")}
-        mobilePanelColor={stringProp("mobilePanelColor", "#1f2937")}
+        mobilePanelBackground={styleProp("mobilePanelBackground", stringProp("mobilePanelBackground", "#ffffff"))}
+        mobilePanelColor={styleProp("mobilePanelColor", stringProp("mobilePanelColor", "#1f2937"))}
       />
     );
   }
@@ -930,12 +1034,12 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     return <div key={node.id} {...common}>{items.map((item, index) => {
       if (!item || typeof item !== "object") return null;
       const entry = item as Record<string, unknown>;
-      return <details key={String(entry.id || index)} open={Boolean(props.firstOpen) && index === 0} style={{ borderBottom: `1px solid ${stringProp("dividerColor", "#e2e8f0")}`, padding: "10px 0", background: stringProp("titleBackground", "#f8fafc") }}><summary style={{ cursor: "pointer", fontWeight: 600, color: stringProp("titleColor", "#0c2f55") }}>{String(entry.title || `Item ${index + 1}`)}</summary><div style={{ padding: "10px 0", color: stringProp("contentColor", "#334155"), background: stringProp("contentBackground", "#ffffff") }}>{String(entry.content || "")}</div></details>;
+      return <details key={String(entry.id || index)} open={Boolean(props.firstOpen) && index === 0} style={{ borderBottom: `1px solid ${styleProp("dividerColor", stringProp("dividerColor", "#e2e8f0"))}`, padding: "10px 0", background: styleProp("titleBackground", stringProp("titleBackground", "#f8fafc")) }}><summary style={{ cursor: "pointer", fontWeight: 600, color: styleProp("titleColor", stringProp("titleColor", "#0c2f55")) }}>{String(entry.title || `Item ${index + 1}`)}</summary><div style={{ padding: "10px 0", color: styleProp("contentColor", stringProp("contentColor", "#334155")), background: styleProp("contentBackground", stringProp("contentBackground", "#ffffff")) }}>{String(entry.content || "")}</div></details>;
     })}</div>;
   }
   if (node.type === "tabs") {
     const items = Array.isArray(props.tabs) ? props.tabs : [];
-    return <PublicBuilderTabs key={node.id} items={items as Array<{id?: string; title?: string; content?: string}>} style={style} normalColor={stringProp("tabNormalColor", "#334155")} normalBackground={stringProp("tabNormalBackground", "#f1f5f9")} activeColor={stringProp("tabActiveColor", "#ffffff")} activeBackground={stringProp("tabActiveBackground", "#0c2f55")} hoverColor={stringProp("tabHoverColor")} hoverBackground={stringProp("tabHoverBackground")} />;
+    return <div key={node.id} {...common}><PublicBuilderTabs items={items as Array<{id?: string; title?: string; content?: string}>} style={{ width: "100%", minWidth: 0 }} normalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))} normalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))} activeColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))} activeBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))} hoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))} hoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))} /></div>;
   }
   if (node.type === "toggle") return <details key={node.id} {...common} open={Boolean(props.open)}><summary>{stringProp("title", "Toggle")}</summary><div>{stringProp("content")}</div></details>;
   if (node.type === "counter") return <div key={node.id} {...common}><strong>{stringProp("prefix")}{String(props.end ?? 0)}{stringProp("suffix")}</strong><div>{stringProp("title")}</div></div>;
@@ -950,13 +1054,13 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   }
   if (node.type === "testimonial") return <blockquote key={node.id} {...common}><p>{stringProp("quote")}</p><strong>{stringProp("name")}</strong><small>{stringProp("role")}</small></blockquote>;
   if (node.type === "flip-box") return <details key={node.id} {...common} style={{ ...style, border: "1px solid #e2e8f0", borderRadius: 10, padding: 18 }}><summary style={{ cursor: "pointer", listStyle: "none" }}><h3>{stringProp("frontTitle", "Front Title")}</h3><p>{stringProp("frontDescription")}</p><span>{stringProp("flipHint", "Click to view more")}</span></summary><div style={{ paddingTop: 14 }}><h3>{stringProp("backTitle", "Back Title")}</h3><p>{stringProp("backDescription")}</p>{stringProp("backButtonUrl") ? <a href={link(props.backButtonUrl)}>{stringProp("backButtonText", "Learn More")}</a> : null}</div></details>;
-  if (node.type === "countdown") return <PublicCountdownWidget key={node.id} date={stringProp("date")} showDays={props.showDays !== false} showHours={props.showHours !== false} showMinutes={props.showMinutes !== false} showSeconds={props.showSeconds !== false} expiredText={stringProp("expiredText", "The offer has ended.")} numberColor={stringProp("numberColor", "#ffffff")} labelColor={stringProp("labelColor", "#ffffff")} boxBackground={stringProp("boxBackground", "#0c2f55")} boxRadius={stringProp("boxRadius", "8px")} style={style} />;
-  if (node.type === "animated-headline") return <PublicAnimatedHeadline key={node.id} beforeText={stringProp("beforeText")} animatedText={Array.isArray(props.animatedText) ? props.animatedText.filter((item): item is string => typeof item === "string") : []} afterText={stringProp("afterText")} animation={stringProp("animation", "typing")} interval={Number(props.interval || 2400)} style={style} />;
-  if (node.type === "share-buttons") return <PublicShareButtons key={node.id} networks={Array.isArray(props.networks) ? props.networks.filter((item): item is string => typeof item === "string") : undefined} showLabels={Boolean(props.showLabels)} buttonSize={Number(props.buttonSize || 40)} iconSize={Number(props.iconSize || 18)} shape={stringProp("shape", "circle")} iconColor={stringProp("iconColor", "#ffffff")} backgroundColor={stringProp("backgroundColor", "#0c2f55")} style={style} />;
+  if (node.type === "countdown") return <div key={node.id} {...common}><PublicCountdownWidget date={stringProp("date")} showDays={props.showDays !== false} showHours={props.showHours !== false} showMinutes={props.showMinutes !== false} showSeconds={props.showSeconds !== false} expiredText={stringProp("expiredText", "The offer has ended.")} numberColor={styleProp("numberColor", stringProp("numberColor", "#ffffff"))} labelColor={styleProp("labelColor", stringProp("labelColor", "#ffffff"))} boxBackground={styleProp("boxBackground", stringProp("boxBackground", "#0c2f55"))} boxRadius={styleProp("boxRadius", stringProp("boxRadius", "8px"))} style={{ width: "100%", minWidth: 0 }} /></div>;
+  if (node.type === "animated-headline") return <div key={node.id} {...common}><PublicAnimatedHeadline beforeText={stringProp("beforeText")} animatedText={Array.isArray(props.animatedText) ? props.animatedText.filter((item): item is string => typeof item === "string") : []} afterText={stringProp("afterText")} animation={stringProp("animation", "typing")} interval={Number(props.interval || 2400)} style={{ width: "100%", minWidth: 0 }} /></div>;
+  if (node.type === "share-buttons") return <div key={node.id} {...common}><PublicShareButtons networks={Array.isArray(props.networks) ? props.networks.filter((item): item is string => typeof item === "string") : undefined} showLabels={Boolean(props.showLabels)} buttonSize={Number(props.buttonSize || 40)} iconSize={Number(props.iconSize || 18)} shape={stringProp("shape", "circle")} iconColor={styleProp("iconColor", stringProp("iconColor", "#ffffff"))} backgroundColor={styleProp("iconBackground", stringProp("iconBackground", stringProp("backgroundColor", "#0c2f55")))} buttonSizeCss={styleProp("buttonSize", `${Number(props.buttonSize || 40)}px`)} iconSizeCss={styleProp("iconSize", `${Number(props.iconSize || 18)}px`)} style={{ width: "100%", minWidth: 0 }} /></div>;
 
   if (node.type === "price-table") {
     const features = Array.isArray(props.features) ? props.features : [];
-    return <section key={node.id} {...common} style={{ ...style, border: `1px solid ${stringProp("cardBorderColor", "#dbe3ed")}`, borderRadius: "10px", padding: 22, background: stringProp("cardBackground", "#ffffff"), textAlign: "center" }}><h3 style={{ color: stringProp("titleColor", "#0c2f55") }}>{stringProp("title", "Plan")}</h3><strong style={{ color: stringProp("priceColor", "#3984e8"), fontSize: 30 }}>{stringProp("currency", "₹")}{stringProp("price", "0")}</strong><span> / {stringProp("period", "month")}</span><ul style={{ textAlign: "left" }}>{features.map((feature, index) => <li key={index}>{String(feature)}</li>)}</ul><a href={link(props.buttonUrl)} style={{ display: "inline-block", padding: "10px 16px", borderRadius: 6, textDecoration: "none", background: stringProp("buttonBackground", "#0c2f55"), color: stringProp("buttonColor", "#ffffff") }}>{stringProp("buttonText", "Choose Plan")}</a></section>;
+    return <section key={node.id} {...common} style={{ ...style, border: `1px solid ${styleProp("cardBorderColor", stringProp("cardBorderColor", "#dbe3ed"))}`, borderRadius: "10px", padding: 22, background: styleProp("cardBackground", stringProp("cardBackground", "#ffffff")), textAlign: "center" }}><h3 style={{ color: styleProp("titleColor", stringProp("titleColor", "#0c2f55")) }}>{stringProp("title", "Plan")}</h3><strong style={{ color: styleProp("priceColor", stringProp("priceColor", "#3984e8")), fontSize: 30 }}>{stringProp("currency", "₹")}{stringProp("price", "0")}</strong><span> / {stringProp("period", "month")}</span><ul style={{ textAlign: "left" }}>{features.map((feature, index) => <li key={index}>{String(feature)}</li>)}</ul><a href={link(props.buttonUrl)} style={{ display: "inline-block", padding: "10px 16px", borderRadius: 6, textDecoration: "none", background: styleProp("buttonBackground", stringProp("buttonBackground", "#0c2f55")), color: styleProp("buttonColor", stringProp("buttonColor", "#ffffff")) }}>{stringProp("buttonText", "Choose Plan")}</a></section>;
   }
   if (node.type === "price-list") {
     const items = Array.isArray(props.items) ? props.items : [];
@@ -1043,14 +1147,18 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       const iconImage = imageUrl(entry.iconImage);
       const label = String(entry.label || entry.name || "Social");
       const href = safeUrl(entry.url) || "#";
-      return <a key={String(entry.id || index)} href={href} aria-label={label} title={label} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: Number(props.buttonSize || 40), height: Number(props.buttonSize || 40), borderRadius: stringProp("shape", "circle") === "square" ? 4 : stringProp("shape", "circle") === "rounded" ? 10 : 999, color: stringProp("iconColor", "#ffffff"), background: stringProp("iconBackground", "#0c2f55"), textDecoration: "none" }}>{iconImage ? <img src={iconImage} alt="" width={size} height={size} /> : SocialIcon ? <SocialIcon size={size} /> : label.slice(0, 1).toUpperCase()}</a>;
+      const buttonSize = Math.max(16, Math.min(120, Number(props.buttonSize || 40)));
+      const responsiveButtonSize = styleProp("buttonSize", `${buttonSize}px`);
+      const responsiveIconSize = styleProp("iconSize", `${size}px`);
+      const responsiveIconColor = styleProp("iconColor", stringProp("iconColor", "#ffffff"));
+      return <a key={String(entry.id || index)} href={href} aria-label={label} title={label} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: responsiveButtonSize, height: responsiveButtonSize, borderRadius: stringProp("shape", "circle") === "square" ? 4 : stringProp("shape", "circle") === "rounded" ? 10 : 999, color: responsiveIconColor, background: styleProp("iconBackground", stringProp("iconBackground", "#0c2f55")), textDecoration: "none" }}>{iconImage ? <img src={iconImage} alt="" width={size} height={size} style={{ width: responsiveIconSize, height: responsiveIconSize }} /> : SocialIcon ? <SocialIcon size={size} style={{ width: responsiveIconSize, height: responsiveIconSize, color: responsiveIconColor }} /> : label.slice(0, 1).toUpperCase()}</a>;
     })}</div>;
   }
   if (node.type === "google-maps") {
     const address = encodeURIComponent(stringProp("address"));
     return address ? <iframe key={node.id} {...common} title="Map" loading="lazy" src={`https://www.google.com/maps?q=${address}&output=embed`} style={{ ...style, width: "100%", height: stringProp("height", "350px"), border: 0 }} /> : null;
   }
-  if (node.type === "login-form") return <PublicBuilderLoginForm key={node.id} usernameLabel={stringProp("usernameLabel", "Username or Email")} passwordLabel={stringProp("passwordLabel", "Password")} submitText={stringProp("submitText", "Log In")} rememberMe={props.rememberMe !== false} style={style} />;
+  if (node.type === "login-form") return <div key={node.id} {...common}><PublicBuilderLoginForm usernameLabel={stringProp("usernameLabel", "Username or Email")} passwordLabel={stringProp("passwordLabel", "Password")} submitText={stringProp("submitText", "Log In")} rememberMe={props.rememberMe !== false} style={{ width: "100%", minWidth: 0 }} /></div>;
   if (node.type === "form") {
     const fields = Array.isArray(props.fields) ? props.fields : [];
     return <form key={node.id} {...common}>{fields.map((field, index) => {
@@ -1076,10 +1184,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     return <div key={node.id} {...common}><PublicShortcodeWidget code={stringProp("shortcode")} /></div>;
   }
   if (node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel") {
-    return <PublicBuilderPosts key={node.id} postType={stringProp("postType", "post")} count={Number(props.count || 6)} columns={Number(props.columns || 3)} category={stringProp("category")} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} imageHeight={stringProp("imageHeight", "180px")} cardBackground={stringProp("cardBackground", "#ffffff")} cardBorderColor={stringProp("cardBorderColor", "#e2e8f0")} cardRadius={stringProp("cardRadius", "8px")} gap={stringProp("gap", "18px")} layout={node.type === "loop-carousel" ? "carousel" : "grid"} className={className} style={style} />;
+    return <div key={node.id} {...common}><PublicBuilderPosts postType={stringProp("postType", "post")} count={Number(props.count || 6)} columns={Number(props.columns || 3)} category={stringProp("category")} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "180px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} gap={styleProp("gap", stringProp("gap", "18px"))} layout={node.type === "loop-carousel" ? "carousel" : "grid"} style={{ width: "100%", minWidth: 0 }} /></div>;
   }
   if (node.type === "post-tabs") {
-    return <PublicBuilderPostTabs key={node.id} postType={stringProp("postType", "post")} tabs={Array.isArray(props.tabs) ? props.tabs as Array<{id?: string; title?: string; categorySlug?: string}> : []} count={Number(props.count || 4)} columns={Number(props.columns || 2)} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} tabNormalColor={stringProp("tabNormalColor", "#334155")} tabNormalBackground={stringProp("tabNormalBackground", "#f1f5f9")} tabActiveColor={stringProp("tabActiveColor", "#ffffff")} tabActiveBackground={stringProp("tabActiveBackground", "#0c2f55")} tabHoverColor={stringProp("tabHoverColor")} tabHoverBackground={stringProp("tabHoverBackground")} gap={stringProp("gap", "16px")} imageHeight={stringProp("imageHeight", "150px")} cardBackground={stringProp("cardBackground", "#ffffff")} cardBorderColor={stringProp("cardBorderColor", "#e2e8f0")} cardRadius={stringProp("cardRadius", "8px")} style={style} />;
+    return <div key={node.id} {...common}><PublicBuilderPostTabs postType={stringProp("postType", "post")} tabs={Array.isArray(props.tabs) ? props.tabs as Array<{id?: string; title?: string; categorySlug?: string}> : []} count={Number(props.count || 4)} columns={Number(props.columns || 2)} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} tabNormalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))} tabNormalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))} tabActiveColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))} tabActiveBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))} tabHoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))} tabHoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))} gap={styleProp("gap", stringProp("gap", "16px"))} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "150px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} style={{ width: "100%", minWidth: 0 }} /></div>;
   }
 
   return <div key={node.id} {...common}>{text(node)}</div>;
@@ -1090,7 +1198,7 @@ function collectFontFamilies(
   families: Set<string>
 ) {
   for (const node of nodes) {
-    const family = node.styles.typography?.fontFamily?.trim();
+    const family = resolveBuilderStyles(node.styles, "desktop").typography?.fontFamily?.trim();
     if (family) families.add(family);
     if (node.children) collectFontFamilies(node.children, families);
   }
@@ -1135,8 +1243,8 @@ export default function PublicBuilderDocument({
       .map((color) => [`--builder-color-${color.id}`, color.value])
   );
   const responsiveStyles = [
-    responsiveCss(layout.root),
     hoverCss(layout.root),
+    responsiveCss(layout.root),
     motionCss(layout.root),
     customCss(layout.root),
   ]

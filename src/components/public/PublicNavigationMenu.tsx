@@ -78,7 +78,7 @@ function safeLink(value: unknown): string {
 function safeCssColor(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const color = value.trim();
-  return /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i.test(color)
+  return /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent|var\(--builder-prop-[a-zA-Z0-9_-]+(?:,\s*[^;{}<>]+)?\))$/i.test(color)
     ? color
     : undefined;
 }
@@ -98,8 +98,13 @@ function buildMenuItemCss(
   const rules: string[] = [];
 
   const addDeviceRules = (device: "desktop" | "tablet" | "mobile") => {
-    const config = menuItemStyles[device];
-    if (!config) return [];
+    const desktop = menuItemStyles.desktop || {};
+    const selected = menuItemStyles[device] || {};
+    const config: MenuDeviceStyle = {
+      normal: { ...(desktop.normal || {}), ...(selected.normal || {}) },
+      hover: { ...(desktop.hover || {}), ...(selected.hover || {}) },
+      active: { ...(desktop.active || {}), ...(selected.active || {}) },
+    };
     const deviceRules: string[] = [];
     const write = (selector: string, state: MenuItemStateStyle | undefined) => {
       if (!state) return;

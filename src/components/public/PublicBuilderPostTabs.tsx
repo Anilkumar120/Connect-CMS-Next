@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import PublicPostTabsClient from "./PublicPostTabsClient";
 import type { CSSProperties } from "react";
 
@@ -34,8 +35,13 @@ export default async function PublicBuilderPostTabs(props: Props) {
   const rawTabs = Array.isArray(props.tabs) ? props.tabs.slice(0, 12) : [];
   const postType = props.postType || "post";
   const count = Math.max(1, Math.min(12, Math.floor(Number(props.count) || 4)));
-  const order = props.order === "asc" ? "asc" : "desc";
-  const orderBy = props.orderBy === "title" ? "title" : props.orderBy === "created" ? "createdAt" : "publishedAt";
+  const order: Prisma.SortOrder = props.order === "asc" ? "asc" : "desc";
+  const orderByClause: Prisma.PostOrderByWithRelationInput =
+    props.orderBy === "title"
+      ? { title: order }
+      : props.orderBy === "created"
+        ? { createdAt: order }
+        : { publishedAt: order };
   const tabs = await Promise.all(rawTabs.map(async (tab, index) => {
     const categorySlug = typeof tab.categorySlug === "string" ? tab.categorySlug.trim() : "";
     const where = {
@@ -47,7 +53,7 @@ export default async function PublicBuilderPostTabs(props: Props) {
     try {
       const posts = await prisma.post.findMany({
         where,
-        orderBy: { [orderBy]: order },
+        orderBy: orderByClause,
         take: count,
         select: { id: true, title: true, slug: true, excerpt: true, featuredImage: true, publishedAt: true },
       });
