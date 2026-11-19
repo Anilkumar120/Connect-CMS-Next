@@ -33,6 +33,15 @@ export type PageBuilderStyles = {
   minHeight?: string;
   maxHeight?: string;
   flexBasis?: string;
+  display?: "flex" | "grid" | "block";
+  gridTemplateColumns?: string;
+  flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
+  flexWrap?: "wrap" | "nowrap" | "wrap-reverse";
+  alignItems?: string;
+  justifyContent?: string;
+  alignContent?: string;
+  columnGap?: string;
+  rowGap?: string;
   flexGrow?: string;
   flexShrink?: string;
   order?: string;

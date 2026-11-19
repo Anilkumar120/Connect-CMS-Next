@@ -461,7 +461,7 @@
   width: 100%;
   min-height: calc(100vh - 145px);
   margin: 0 auto;
-  overflow: hidden;
+  overflow: visible;
   background: #ffffff;
   box-shadow: 0 3px 18px rgba(15, 23, 42, 0.09);
   transition: width 0.2s ease;
@@ -608,8 +608,9 @@
 }
 
 .nodePreview {
+  position: relative;
   min-height: 30px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .previewSection {
@@ -888,5 +889,39 @@
 
   .canvasHint {
     display: none;
+  }
+}
+/* Inspector control groups use full-width vertical fields for readability. */
+.inspectorControlStack {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.inspectorControlStack > * {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+
+
+/* Embed Header/Footer visual builders inside the regular admin shell.
+   The page/post builder remains full-screen as before. */
+.builderInsideAdmin {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
+  height: calc(100vh - 76px);
+  min-height: 0;
+}
+
+@media (max-width: 800px) {
+  .builderInsideAdmin {
+    height: calc(100vh - 66px);
   }
 }

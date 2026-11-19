@@ -1,14 +1,13 @@
-
 import { Suspense, type ReactNode } from "react";
 import PublicThemeRenderer from "./PublicThemeRenderer";
 import PublicHeader from "./PublicHeader";
 import PublicFooter from "./PublicFooter";
 import PublicSiteMetadata from "./PublicSiteMetadata";
 import PublicBuilderDocument from "./PublicBuilderDocument";
-import { getPublishedBuilderDocument } from "@/lib/builder/public-layout";
+import { getPublishedBuilderDocumentForPath } from "@/lib/builder/public-layout";
 
-async function PublishedHeader() {
-  const document = await getPublishedBuilderDocument("header:primary");
+async function PublishedHeader({ pathname }: { pathname: string }) {
+  const document = await getPublishedBuilderDocumentForPath("header", pathname);
   return document?.layout.root.length ? (
     <header className="public-builder-header">
       <PublicBuilderDocument
@@ -21,8 +20,8 @@ async function PublishedHeader() {
   );
 }
 
-async function PublishedFooter() {
-  const document = await getPublishedBuilderDocument("footer:primary");
+async function PublishedFooter({ pathname }: { pathname: string }) {
+  const document = await getPublishedBuilderDocumentForPath("footer", pathname);
   return document?.layout.root.length ? (
     <footer className="public-builder-footer">
       <PublicBuilderDocument
@@ -37,8 +36,10 @@ async function PublishedFooter() {
 
 export default function PublicLayout({
   children,
+  pathname = "/",
 }: {
   children: ReactNode;
+  pathname?: string;
 }) {
   return (
     <PublicThemeRenderer>
@@ -46,22 +47,14 @@ export default function PublicLayout({
         <PublicSiteMetadata />
       </Suspense>
       <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
       >
         <Suspense fallback={<PublicHeader />}>
-          <PublishedHeader />
+          <PublishedHeader pathname={pathname} />
         </Suspense>
-
-        <main style={{ flex: 1 }}>
-          {children}
-        </main>
-
+        <main style={{ flex: 1 }}>{children}</main>
         <Suspense fallback={<PublicFooter />}>
-          <PublishedFooter />
+          <PublishedFooter pathname={pathname} />
         </Suspense>
       </div>
     </PublicThemeRenderer>

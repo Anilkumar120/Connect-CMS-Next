@@ -77,10 +77,11 @@ import MediaPickerModal, {
 } from "@/components/admin/MediaPickerModal";
 import IconPicker from "@/components/admin/IconPicker";
 import BannerRichTextEditor from "@/components/admin/BannerRichTextEditor";
+import BuilderRichTextEditor from "@/components/admin/BuilderRichTextEditor";
 import BannerSlider, {
   type BannerSliderSlide,
 } from "@/components/public/BannerSlider";
-import { themeIcons } from "@/components/public/theme-icons";
+import { themeIcons, themeIconLabels } from "@/components/public/theme-icons";
 import {
   builderSpacingCss,
   combineBuilderSpacing,
@@ -130,6 +131,12 @@ type HistoryState = {
   root: BuilderNode[];
 };
 
+type GlobalTemplatePreview = {
+  title: string;
+  status: string;
+  root: BuilderNode[];
+};
+
 type MediaItem = {
   id: string;
   fileName?: string;
@@ -149,6 +156,7 @@ type LinkSuggestion = {
 type IconPickerTarget =
   | { kind: "button"; value: string }
   | { kind: "widget"; value: string }
+  | { kind: "nodeProp"; key: string; value: string }
   | { kind: "repeaterItem"; index: number; key: "items" | "icons"; value: string }
   | { kind: "slideButton"; slideIndex: number; buttonIndex: number; value: string }
   | null;
@@ -198,7 +206,8 @@ type MediaTarget =
   | "slideBackground"
   | "slideButtonIcon"
   | "carouselItem"
-  | "repeaterIcon";
+  | "repeaterIcon"
+  | "menuMobileLogo";
 
 type BuilderMenuItem = {
   id: string;
@@ -671,6 +680,12 @@ function safeMediaUrl(value: string): string {
   }
 }
 
+function cssLength(value: unknown, fallback: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) return `${value}px`;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return fallback;
+}
+
 function backgroundToCss(
   background?: BuilderBackground,
   device: BuilderDevice = "desktop",
@@ -977,6 +992,10 @@ function getContainerChildrenStyle(
   };
 
   const responsiveProps = resolveBuilderProps(node.props, device);
+  if (style.display === "grid" && !childrenStyle.gridTemplateColumns) {
+    const childCount = Math.max(1, Math.min(6, node.children?.length || 2));
+    childrenStyle.gridTemplateColumns = `repeat(${childCount}, minmax(0, 1fr))`;
+  }
   if (node.type === "section" && responsiveProps.contentWidth !== "full") {
     childrenStyle.width = "100%";
     childrenStyle.maxWidth = String(responsiveProps.containerWidth || "1200px");
@@ -999,12 +1018,91 @@ function getContainerPreviewStyle(
   return style;
 }
 
+function getCanvasWidthIndicator(
+  node: BuilderNode,
+  device: BuilderDevice,
+  parentNode?: BuilderNode | null,
+): { label: string; percentage: number | null } | null {
+  if (!LAYOUT_TYPES.has(node.type)) return null;
+
+  const style = getNodeInlineStyle(node, device);
+  const widthMode = getWidthMode(node.advanced?.widthMode, device);
+  const explicitWidth = String(style.width || style.flexBasis || '').trim();
+
+  if (!parentNode) {
+    const width = explicitWidth || (widthMode === 'inline' ? 'Auto' : '100%');
+    const match = width.match(/^(\d+(?:\.\d+)?)%$/);
+    return {
+      label: width,
+      percentage: match ? Math.max(0, Math.min(100, Number(match[1]))) : null,
+    };
+  }
+
+  const parentStyle = getNodeInlineStyle(parentNode, device);
+  const display = String(parentStyle.display || 'flex');
+  const direction = String(parentStyle.flexDirection || (parentNode.type === 'row' ? 'row' : 'column'));
+  const siblings = (parentNode.children || []).filter((child) => LAYOUT_TYPES.has(child.type));
+  const count = Math.max(1, siblings.length);
+
+  if (display === 'flex' && direction.startsWith('row')) {
+    const widthValue = String(style.width || '').trim();
+    const isDefaultFullWidth = widthValue === '100%' && widthMode === 'default';
+    const hasExplicitSize = Boolean(
+      (widthValue && !isDefaultFullWidth) ||
+      style.flexBasis ||
+      Number(style.flexGrow || 0) > 0 ||
+      widthMode === 'custom' ||
+      widthMode === 'full' ||
+      widthMode === 'inline',
+    );
+    if (!hasExplicitSize) {
+      const percentage = 100 / count;
+      return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+    }
+  }
+
+  if (display === "grid") {
+    const columns = String(parentStyle.gridTemplateColumns || "").trim();
+    const explicitPercentage = explicitWidth.match(/^(\d+(?:\.\d+)?)%$/);
+    if (explicitPercentage) {
+      const percentage = Number(explicitPercentage[1]);
+      return { label: `${percentage}%`, percentage };
+    }
+
+    const repeatMatch = columns.match(/^repeat\(\s*(\d+)/i);
+    const gridColumnCount = Math.max(
+      1,
+      Math.min(
+        12,
+        repeatMatch
+          ? Number(repeatMatch[1])
+          : columns
+            ? columns.split(/\s+(?![^()]*\))/).filter(Boolean).length
+            : count,
+      ),
+    );
+    const percentage = 100 / gridColumnCount;
+    return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+  }
+
+  if (display === 'flex' && direction.startsWith('column')) {
+    const width = explicitWidth || '100%';
+    const match = width.match(/^(\d+(?:\.\d+)?)%$/);
+    return { label: width, percentage: match ? Number(match[1]) : null };
+  }
+
+  const width = explicitWidth || '100%';
+  const match = width.match(/^(\d+(?:\.\d+)?)%$/);
+  return { label: width, percentage: match ? Number(match[1]) : null };
+}
+
 function getCanvasFlexItemStyle(
   node: BuilderNode,
   device: BuilderDevice,
+  parentNode?: BuilderNode | null,
 ): CSSProperties {
   const style = getNodeInlineStyle(node, device);
-  return {
+  const result: CSSProperties = {
     width: style.width,
     minWidth: style.minWidth,
     maxWidth: style.maxWidth,
@@ -1013,7 +1111,41 @@ function getCanvasFlexItemStyle(
     flexBasis: style.flexBasis,
     order: style.order,
     alignSelf: style.alignSelf,
+    boxSizing: "border-box",
   };
+
+  if (!parentNode || !LAYOUT_TYPES.has(node.type)) return result;
+
+  const parentStyle = getNodeInlineStyle(parentNode, device);
+  const parentDisplay = String(parentStyle.display || "flex");
+  const parentDirection = String(parentStyle.flexDirection || (parentNode.type === "row" ? "row" : "column"));
+  const widthMode = getWidthMode(node.advanced?.widthMode, device);
+  const widthValue = String(style.width || "").trim();
+  // New and old Builder nodes commonly carry a default width:100%. Treat that
+  // default as fluid in a flex row; an intentional custom width should use the
+  // Custom width mode or an explicit flex basis/grow value.
+  const isDefaultFullWidth = widthValue === "100%" && widthMode === "default";
+  const explicitSize = Boolean(
+    (widthValue && !isDefaultFullWidth) || style.flexBasis || Number(style.flexGrow || 0) > 0 || widthMode !== "default",
+  );
+
+  if (parentDisplay === "flex" && parentDirection.startsWith("row") && !explicitSize) {
+    // Each sibling layout container receives the same flex basis. Two children
+    // become 50/50, three become 33/33/33, etc. Explicit width/flex overrides win.
+    result.width = undefined;
+    result.flex = "1 1 0%";
+    result.flexGrow = 1;
+    result.flexShrink = 1;
+    result.flexBasis = "0%";
+    result.minWidth = 0;
+    result.maxWidth = "100%";
+  } else if ((parentDisplay === "flex" && parentDirection.startsWith("column")) || parentDisplay === "grid" || parentDisplay === "block") {
+    if (!style.width && widthMode === "default") result.width = "100%";
+    result.minWidth = style.minWidth || 0;
+    result.maxWidth = style.maxWidth || "100%";
+  }
+
+  return result;
 }
 
 /* -------------------------------------------------------
@@ -1027,9 +1159,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       style={{
         display: "flex",
         flexDirection: "column",
+        alignItems: "stretch",
         gap: 6,
         marginBottom: 13,
+        width: "100%",
         minWidth: 0,
+        boxSizing: "border-box",
       }}
     >
       <span
@@ -1078,6 +1213,224 @@ function TextControl({
   );
 }
 
+function colorToParts(value: string): { hex: string; red: number; green: number; blue: number; alpha: number } {
+  const raw = value.trim().toLowerCase();
+  if (raw === "transparent") return { hex: "#000000", red: 0, green: 0, blue: 0, alpha: 0 };
+
+  const hexMatch = raw.match(/^#([0-9a-f]{3,8})$/i);
+  if (hexMatch) {
+    let hex = hexMatch[1];
+    if (hex.length === 3 || hex.length === 4) hex = hex.split("").map((part) => part + part).join("");
+    const red = parseInt(hex.slice(0, 2), 16);
+    const green = parseInt(hex.slice(2, 4), 16);
+    const blue = parseInt(hex.slice(4, 6), 16);
+    const alpha = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+    return { hex: `#${hex.slice(0, 6)}`, red, green, blue, alpha };
+  }
+
+  const rgbMatch = raw.match(/^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i);
+  if (rgbMatch) {
+    const red = Math.max(0, Math.min(255, Number(rgbMatch[1])));
+    const green = Math.max(0, Math.min(255, Number(rgbMatch[2])));
+    const blue = Math.max(0, Math.min(255, Number(rgbMatch[3])));
+    const alphaRaw = rgbMatch[4] || "1";
+    const alpha = alphaRaw.endsWith("%") ? Number(alphaRaw.slice(0, -1)) / 100 : Number(alphaRaw);
+    const hex = `#${[red, green, blue].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}`;
+    return { hex, red, green, blue, alpha: Math.max(0, Math.min(1, alpha)) };
+  }
+
+  return { hex: "#000000", red: 0, green: 0, blue: 0, alpha: 1 };
+}
+
+type ColorFormat = "HEX" | "RGB" | "HSL";
+
+function rgbToHsl(red: number, green: number, blue: number) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+  const l = (max + min) / 2;
+  let saturation = 0;
+  if (delta !== 0) {
+    saturation = delta / (1 - Math.abs(2 * l - 1));
+    switch (max) {
+      case r: h = ((g - b) / delta) % 6; break;
+      case g: h = (b - r) / delta + 2; break;
+      default: h = (r - g) / delta + 4; break;
+    }
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h: Math.round(h), s: Math.round(saturation * 100), l: Math.round(l * 100) };
+}
+
+function hslToRgb(h: number, s: number, l: number) {
+  const hue = ((h % 360) + 360) % 360;
+  const saturation = Math.max(0, Math.min(100, s)) / 100;
+  const lightness = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = lightness - c / 2;
+  let parts: [number, number, number];
+  if (hue < 60) parts = [c, x, 0];
+  else if (hue < 120) parts = [x, c, 0];
+  else if (hue < 180) parts = [0, c, x];
+  else if (hue < 240) parts = [0, x, c];
+  else if (hue < 300) parts = [x, 0, c];
+  else parts = [c, 0, x];
+  return parts.map((part) => Math.round((part + m) * 255)) as [number, number, number];
+}
+
+function colorDraft(color: ReturnType<typeof colorToParts>, format: ColorFormat): string {
+  if (format === "HEX") return color.hex.toUpperCase();
+  if (format === "RGB") return `${color.red}, ${color.green}, ${color.blue}`;
+  const hsl = rgbToHsl(color.red, color.green, color.blue);
+  return `${hsl.h}, ${hsl.s}%, ${hsl.l}%`;
+}
+
+function ColorControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const color = colorToParts(value || "#000000");
+  const [format, setFormat] = useState<ColorFormat>("HEX");
+  const [draft, setDraft] = useState(colorDraft(color, "HEX"));
+
+  useEffect(() => {
+    setDraft(colorDraft(colorToParts(value || "#000000"), format));
+  }, [value, format]);
+
+  const emitRgb = (red: number, green: number, blue: number) => {
+    const r = Math.max(0, Math.min(255, Math.round(red)));
+    const g = Math.max(0, Math.min(255, Math.round(green)));
+    const b = Math.max(0, Math.min(255, Math.round(blue)));
+    const current = colorToParts(value || "#000000");
+    if (current.alpha >= 0.999) {
+      onChange(`#${[r, g, b].map((part) => part.toString(16).padStart(2, "0")).join("")}`);
+    } else {
+      onChange(`rgba(${r}, ${g}, ${b}, ${Math.round(current.alpha * 100) / 100})`);
+    }
+  };
+
+  const commitDraft = () => {
+    const raw = draft.trim();
+    if (format === "HEX") {
+      if (raw.toLowerCase() === "transparent") {
+        onChange("transparent");
+        return;
+      }
+      if (/^#[0-9a-f]{3,8}$/i.test(raw)) {
+        const parsed = colorToParts(raw);
+        emitRgb(parsed.red, parsed.green, parsed.blue);
+      }
+      return;
+    }
+    if (format === "RGB") {
+      const match = raw.match(/^\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*$/);
+      if (match) emitRgb(Number(match[1]), Number(match[2]), Number(match[3]));
+      return;
+    }
+    const match = raw.match(/^\s*(\d{1,3})\s*[, ]\s*(\d{1,3})%?\s*[, ]\s*(\d{1,3})%?\s*$/);
+    if (match) {
+      const [red, green, blue] = hslToRgb(Number(match[1]), Number(match[2]), Number(match[3]));
+      emitRgb(red, green, blue);
+    }
+  };
+
+  const setAlpha = (alpha: number) => {
+    const nextAlpha = Math.max(0, Math.min(1, alpha));
+    if (nextAlpha >= 0.999) {
+      onChange(color.hex);
+    } else {
+      onChange(`rgba(${color.red}, ${color.green}, ${color.blue}, ${Math.round(nextAlpha * 100) / 100})`);
+    }
+  };
+
+  const opacityGradient = `linear-gradient(to right, rgba(${color.red},${color.green},${color.blue},0), rgba(${color.red},${color.green},${color.blue},1))`;
+
+  return (
+    <Field label={label}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, flexWrap: "nowrap" }}>
+        {(["HEX", "RGB", "HSL"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            aria-pressed={format === item}
+            onClick={() => setFormat(item)}
+            style={{
+              border: format === item ? "1px solid #3984e8" : "1px solid #dbe3ed",
+              background: format === item ? "#eff6ff" : "#fff",
+              color: format === item ? "#1d4ed8" : "#64748b",
+              borderRadius: 5,
+              minWidth: 38,
+              height: 28,
+              padding: "0 7px",
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {item}
+          </button>
+        ))}
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "#64748b" }}>Opacity</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 38px auto", gap: 6, alignItems: "center", minWidth: 0 }}>
+        <input
+          type="text"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => { if (event.key === "Enter") { commitDraft(); (event.currentTarget as HTMLInputElement).blur(); } }}
+          placeholder={format === "HEX" ? "#RRGGBB" : format === "RGB" ? "R, G, B" : "H, S%, L%"}
+          aria-label={`${label} ${format} color`}
+          style={{ ...CONTROL_STYLE, minWidth: 0 }}
+        />
+        <div style={{ width: 38, height: 34, padding: 2, border: "1px solid #cbd5e1", borderRadius: 6, background: "conic-gradient(#e5e7eb 25%, #fff 0 50%, #e5e7eb 0 75%, #fff 0) 0 0 / 10px 10px", boxSizing: "border-box" }}>
+          <input
+            aria-label={`${label} color picker`}
+            type="color"
+            value={color.hex}
+            onChange={(event) => {
+              const picked = colorToParts(event.target.value);
+              emitRgb(picked.red, picked.green, picked.blue);
+            }}
+            style={{ width: "100%", height: "100%", display: "block", padding: 0, border: 0, background: "transparent", cursor: "pointer" }}
+          />
+        </div>
+        <button
+          type="button"
+          title={color.alpha <= 0 ? "Use opaque color" : "Set transparent"}
+          onClick={() => color.alpha <= 0 ? onChange(color.hex) : onChange(`rgba(${color.red}, ${color.green}, ${color.blue}, 0)`)}
+          style={{ ...BUTTON_STYLE, padding: "7px 8px", whiteSpace: "nowrap" }}
+        >
+          {color.alpha <= 0 ? "Solid" : "Clear"}
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 42px", gap: 8, alignItems: "center", marginTop: 8 }}>
+        <input
+          aria-label={`${label} transparency / opacity`}
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={Math.round(color.alpha * 100)}
+          onChange={(event) => setAlpha(Number(event.target.value) / 100)}
+          style={{ width: "100%", height: 7, accentColor: "#3984e8", background: opacityGradient, borderRadius: 99, cursor: "pointer" }}
+        />
+        <span style={{ color: "#64748b", fontSize: 11, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Math.round(color.alpha * 100)}%</span>
+      </div>
+    </Field>
+  );
+}
 function SelectControl({
   label,
   value,
@@ -1109,25 +1462,135 @@ function SelectControl({
   );
 }
 
+type CssMeasureUnit = "px" | "%" | "em" | "rem" | "vw" | "vh" | "auto" | "custom" | "unitless";
+
+function readCssMeasure(
+  value: string,
+  allowUnitless = false,
+): { number: string; unit: CssMeasureUnit } {
+  const raw = value.trim();
+  if (!raw) return { number: "", unit: allowUnitless ? "unitless" : "px" };
+  if (raw.toLowerCase() === "auto") return { number: "", unit: "auto" };
+
+  const match = raw.match(/^(-?(?:\d+\.?\d*|\.\d+))\s*(px|%|em|rem|vw|vh)$/i);
+  if (match) {
+    return { number: match[1], unit: match[2].toLowerCase() as CssMeasureUnit };
+  }
+
+  // Historical numeric line-height values such as 1.4 stay unitless.
+  if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(raw)) {
+    return { number: raw, unit: allowUnitless ? "unitless" : "px" };
+  }
+
+  return { number: raw, unit: "custom" };
+}
+
 function UnitControl({
   label,
   value,
   onChange,
-  placeholder = "0px",
+  placeholder = "0",
+  allowAuto = true,
+  allowUnitless = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  allowAuto?: boolean;
+  allowUnitless?: boolean;
 }) {
+  const parsed = readCssMeasure(value, allowUnitless);
+  const [emptyUnit, setEmptyUnit] = useState<CssMeasureUnit>("px");
+
+  useEffect(() => {
+    if (value.trim()) setEmptyUnit(parsed.unit);
+  }, [value, parsed.unit]);
+
+  const selectedUnit = value.trim() ? parsed.unit : emptyUnit;
+  const units: CssMeasureUnit[] = [
+    "px",
+    "%",
+    "rem",
+    "em",
+    "vw",
+    "vh",
+    ...(allowUnitless ? ["unitless" as const] : []),
+    ...(allowAuto ? ["auto" as const] : []),
+    "custom",
+  ];
+
+  const changeUnit = (nextUnit: CssMeasureUnit) => {
+    setEmptyUnit(nextUnit);
+    if (nextUnit === "auto") {
+      onChange("auto");
+      return;
+    }
+    if (nextUnit === "custom") {
+      // Keep the current valid length as a CSS expression, or seed a useful
+      // starter expression when the control is blank.
+      onChange(value ? (selectedUnit === "custom" ? value : `calc(${value})`) : "");
+      return;
+    }
+    if (nextUnit === "unitless") {
+      onChange(parsed.number || "");
+      return;
+    }
+
+    const numeric = selectedUnit === "auto" || selectedUnit === "custom"
+      ? ""
+      : parsed.number;
+    onChange(numeric ? `${numeric}${nextUnit}` : "");
+  };
+
+  const isCustom = selectedUnit === "custom";
+  const isAuto = selectedUnit === "auto";
+  const displayValue = isCustom
+    ? value
+    : isAuto
+      ? "auto"
+      : parsed.number;
+
   return (
     <Field label={label}>
-      <input
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        style={CONTROL_STYLE}
-      />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 82px",
+          gap: 5,
+          minWidth: 0,
+        }}
+      >
+        <input
+          type={isCustom || isAuto ? "text" : "number"}
+          inputMode={isCustom ? "text" : "decimal"}
+          value={displayValue}
+          disabled={isAuto}
+          placeholder={isCustom ? "calc(100% - 20px)" : placeholder.replace(/(px|%|em|rem|vw|vh)$/i, "")}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (isCustom || selectedUnit === "unitless") {
+              onChange(next);
+            } else if (!isAuto) {
+              onChange(next ? `${next}${selectedUnit}` : "");
+            }
+          }}
+          style={{ ...CONTROL_STYLE, minWidth: 0, opacity: isAuto ? 0.6 : 1 }}
+          aria-label={`${label} value`}
+        />
+        <select
+          value={selectedUnit}
+          onChange={(event) => changeUnit(event.target.value as CssMeasureUnit)}
+          style={{ ...CONTROL_STYLE, minWidth: 0, padding: "7px 5px" }}
+          aria-label={`${label} unit`}
+        >
+          {units.map((unit) => (
+            <option key={unit} value={unit}>
+              {unit === "custom" ? "Custom" : unit === "unitless" ? "Unitless" : unit}
+            </option>
+          ))}
+        </select>
+      </div>
     </Field>
   );
 }
@@ -1144,6 +1607,7 @@ function SegmentedControl({
     label: string;
     value: string;
     title?: string;
+    icon?: string;
   }>;
   onChange: (value: string) => void;
 }) {
@@ -1187,14 +1651,19 @@ function SegmentedControl({
               key={option.value}
               type="button"
               aria-pressed={active}
+              aria-label={option.title || option.label}
               title={option.title || option.label}
               onClick={() => onChange(option.value)}
               style={{
                 flex: "1 1 auto",
-                minWidth: 42,
+                minWidth: option.icon ? 36 : 42,
+                minHeight: 34,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
                 border: active ? "1px solid #3984e8" : "1px solid transparent",
                 borderRadius: 4,
-                padding: "7px 8px",
+                padding: option.icon ? "7px" : "7px 8px",
                 background: active ? "#fff" : "transparent",
                 color: active ? "#2164c5" : "#475569",
                 fontSize: 11,
@@ -1202,7 +1671,14 @@ function SegmentedControl({
                 cursor: "pointer",
               }}
             >
-              {option.label}
+              {option.icon && themeIcons[option.icon] ? (
+                (() => {
+                  const OptionIcon = themeIcons[option.icon!];
+                  return <OptionIcon size={16} aria-hidden="true" />;
+                })()
+              ) : (
+                option.label
+              )}
             </button>
           );
         })}
@@ -1279,16 +1755,26 @@ function SpacingControl({
               const nextSides = Object.fromEntries(
                 (["top", "right", "bottom", "left"] as const).map((side) => {
                   const current = spacing[side] || "0";
-                  const numeric = current.replace(/\s*(px|%|em|rem|vw|vh)$/i, "");
-                  return [side, unit === "auto" ? "auto" : numeric];
+                  if (unit === "auto") return [side, "auto"];
+                  if (unit === "custom") {
+                    // Keep the existing CSS length/expression as-is. Auto is
+                    // not a useful starting point for a custom expression.
+                    return [side, current.trim().toLowerCase() === "auto" ? "0" : current];
+                  }
+                  // Switching back from Auto must produce a valid numeric
+                  // value instead of accidentally creating "auto%" / "autoem".
+                  const numeric = current.trim().toLowerCase() === "auto"
+                    ? "0"
+                    : current.replace(/\s*(px|%|em|rem|vw|vh)$/i, "");
+                  return [side, numeric || "0"];
                 }),
               ) as Pick<BuilderSpacing, "top" | "right" | "bottom" | "left">;
               onChange({ ...spacing, ...nextSides, unit });
             }}
-            style={{ ...CONTROL_STYLE, width: 70, padding: "4px 6px" }}
+            style={{ ...CONTROL_STYLE, width: 82, padding: "4px 6px" }}
           >
-            {["px", "%", "em", "rem", ...(label.toLowerCase().includes("padding") ? [] : ["auto"])].map((unit) => (
-              <option key={unit} value={unit}>{unit}</option>
+            {["px", "%", "rem", "em", "vw", "vh", ...(label.toLowerCase().includes("padding") ? [] : ["auto"]), "custom"].map((unit) => (
+              <option key={unit} value={unit}>{unit === "custom" ? "Custom" : unit}</option>
             ))}
           </select>
           <button
@@ -1347,7 +1833,9 @@ function SpacingControl({
             </span>
 
             <input
+              type={spacing.unit === "custom" ? "text" : "text"}
               value={spacing[side] || ""}
+              placeholder={spacing.unit === "custom" ? "calc(...)" : "0"}
               onChange={(event) => updateSide(side, event.target.value)}
               aria-label={`${label} ${sideLabel}`}
               style={{
@@ -1457,6 +1945,7 @@ function PreviewNode({
     id: node.advanced?.cssId || undefined,
     className: advancedClass || undefined,
     style: inlineStyle,
+    "data-builder-node-id": node.id,
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
   };
@@ -1515,11 +2004,14 @@ function PreviewNode({
   }
 
   if (node.type === "text") {
-    return (
-      <p {...commonProps} className={`${styles.previewText} ${advancedClass}`}>
-        {getNodeText(node)}
-      </p>
-    );
+    const safeRichText = sanitizeHtml(String(props.content || ""), {
+      allowedTags: [...sanitizeHtml.defaults.allowedTags, "h1", "h2", "h3", "h4", "h5", "h6", "img", "figure", "figcaption", "table", "thead", "tbody", "tr", "th", "td", "hr", "span"],
+      allowedAttributes: { ...sanitizeHtml.defaults.allowedAttributes, "*": ["class", "style", "title"], a: ["href", "target", "rel", "title"], img: ["src", "alt", "title", "width", "height"] },
+      allowedStyles: { "*": { color: [/^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]{3,24}|transparent)$/i], "background-color": [/^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]{3,24}|transparent)$/i], "text-align": [/^(left|right|center|justify)$/i], "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/i], "font-weight": [/^(normal|bold|[1-9]00)$/i], "font-style": [/^(normal|italic|oblique)$/i], "text-decoration": [/^(none|underline|line-through)$/i], "line-height": [/^\d+(?:\.\d+)?(?:px|em|rem|%)?$/i] } },
+      allowedSchemes: ["http", "https", "mailto", "tel"],
+      allowProtocolRelative: false,
+    });
+    return <div {...commonProps} className={`${styles.previewText} ${advancedClass}`} dangerouslySetInnerHTML={{ __html: safeRichText }} />;
   }
 
   if (node.type === "button") {
@@ -1648,33 +2140,147 @@ function PreviewNode({
   }
 
   if (node.type === "icon") {
-    const Icon = themeIcons[String(props.iconName || "")];
-    const iconImage = typeof props.iconImage === "string" && props.iconImage ? props.iconImage : typeof props.src === "string" ? props.src : "";
+    const iconName = typeof props.iconName === "string" ? props.iconName : "";
+    const Icon = iconName ? themeIcons[iconName] : null;
+    const iconImage = typeof props.iconImage === "string" && props.iconImage
+      ? props.iconImage
+      : typeof props.src === "string" ? props.src : "";
+    const symbol = typeof props.symbol === "string" ? props.symbol : "";
+    const sizeCss = cssLength(props.size, "24px");
+    const color = String(props.iconColor || props.color || "#0c2f55");
+
     if (iconImage) {
       return (
         <span {...commonProps} className={styles.previewIcon}>
-          <img src={safeMediaUrl(iconImage)} alt={String(props.alt || "")} style={{ width: Number(props.size || 24), height: Number(props.size || 24), objectFit: "contain" }} />
+          <img src={safeMediaUrl(iconImage)} alt={String(props.alt || "")} style={{ width: sizeCss, height: sizeCss, objectFit: "contain" }} />
         </span>
       );
     }
+
+    if (!Icon && !symbol) return null;
+
     return (
       <span
         {...commonProps}
         className={styles.previewIcon}
         style={{
           ...inlineStyle,
-          fontSize: Number(props.size || 24),
-          color: String(props.color || "#0c2f55"),
+          fontSize: sizeCss,
+          color,
         }}
       >
-        {Icon ? <Icon size={Number(props.size || 24)} /> : String(props.symbol || "★")}
+        {Icon ? <Icon size={24} style={{ width: sizeCss, height: sizeCss, color }} /> : symbol}
       </span>
     );
   }
 
   if (node.type === "icon-list") {
-    const items = Array.isArray(props.items) ? props.items as Array<Record<string, unknown>> : [];
-    return <ul {...commonProps} style={{ ...inlineStyle, listStyle: "none", padding: 0, margin: 0, display: "grid", gap: String(props.itemSpacing || "10px") }}>{items.map((item, index) => { const ItemIcon = themeIcons[String(item.iconName || "Check")]; const iconImage = safeMediaUrl(String(item.iconImage || "")); const iconSize = Number(props.iconSize || 16); const content = <><span style={{ display: "inline-flex", alignItems: "center", color: String(props.iconColor || "#3984e8") }}>{iconImage ? <img src={iconImage} alt="" width={iconSize} height={iconSize} style={{ objectFit: "contain" }} /> : ItemIcon ? <ItemIcon size={iconSize} color={String(props.iconColor || "#3984e8")} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>; const href = String(item.url || "").trim(); return <li key={String(item.id || index)} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: props.divider ? "1px solid #e2e8f0" : undefined, paddingBottom: props.divider ? 8 : undefined }}>{href ? <a href={href} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "inherit", textDecoration: "none" }}>{content}</a> : content}</li>; })}</ul>;
+    const items = Array.isArray(props.items)
+      ? props.items as Array<Record<string, unknown>>
+      : [];
+    const listLayout = String(props.layout || "list");
+    const listColumns = Math.max(1, Math.min(6, Number(props.columns) || 2));
+    const iconSizeCss = cssLength(props.iconSize, "16px");
+    const itemGap = cssLength(props.iconGap, "9px");
+    const itemSpacing = cssLength(props.itemSpacing, "10px");
+    const display = listLayout === "inline" ? "flex" : "grid";
+
+    return (
+      <ul
+        {...commonProps}
+        style={{
+          ...inlineStyle,
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: inlineStyle.display || display,
+          flexDirection: inlineStyle.flexDirection || (listLayout === "inline" ? "row" : "column"),
+          flexWrap: inlineStyle.flexWrap || (listLayout === "inline" ? "wrap" : "nowrap"),
+          gridTemplateColumns: inlineStyle.gridTemplateColumns || (listLayout === "grid" ? `repeat(${listColumns}, minmax(0, 1fr))` : undefined),
+          alignItems: inlineStyle.alignItems || "stretch",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          gap: inlineStyle.gap || itemSpacing,
+        }}
+      >
+        {items.map((item, index) => {
+          const iconName = typeof item.iconName === "string" ? item.iconName : "Check";
+          const ItemIcon = iconName ? themeIcons[iconName] : null;
+          const iconImage = safeMediaUrl(String(item.iconImage || ""));
+          const hasItemIcon = Boolean(iconImage || ItemIcon);
+          const content = (
+            <>
+              {hasItemIcon ? (
+                <span style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto", color: String(props.iconColor || "#3984e8") }}>
+                  {iconImage ? (
+                    <img src={iconImage} alt="" style={{ width: iconSizeCss, height: iconSizeCss, objectFit: "contain" }} />
+                  ) : ItemIcon ? (
+                    <ItemIcon size={16} style={{ width: iconSizeCss, height: iconSizeCss, color: String(props.iconColor || "#3984e8") }} />
+                  ) : null}
+                </span>
+              ) : null}
+              <span>{String(item.text || item.label || `List item ${index + 1}`)}</span>
+            </>
+          );
+          const href = String(item.url || "").trim();
+          const contentStyle: CSSProperties = {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: itemGap,
+            color: "inherit",
+            textDecoration: "none",
+          };
+
+          return (
+            <li
+              key={String(item.id || index)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                minWidth: 0,
+                gap: itemGap,
+                borderBottom: props.divider ? "1px solid #e2e8f0" : undefined,
+                paddingBottom: props.divider ? itemSpacing : undefined,
+              }}
+            >
+              {href ? <a href={href} style={contentStyle}>{content}</a> : <span style={contentStyle}>{content}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  if (node.type === "social-icons") {
+    const icons = Array.isArray(props.icons) ? props.icons as Array<Record<string, unknown>> : [];
+    const iconSizeCss = cssLength(props.iconSize, "22px");
+    const buttonSizeCss = cssLength(props.buttonSize, "40px");
+    const shape = String(props.shape || "circle");
+    const radius = shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px";
+    return (
+      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: inlineStyle.gap || cssLength(props.gap, "12px") }}>
+        {icons.map((entry, index) => {
+          const name = String(entry.iconName || entry.name || "");
+          const SocialIcon = name ? themeIcons[name] : null;
+          const image = safeMediaUrl(String(entry.iconImage || ""));
+          if (!SocialIcon && !image) return null;
+          const href = safeMediaUrl(String(entry.url || "")) || "#";
+          const iconColor = String(props.iconColor || "#ffffff");
+          return (
+            <a
+              key={String(entry.id || index)}
+              href={href}
+              aria-label={String(entry.label || entry.name || "Social link")}
+              title={String(entry.label || entry.name || "Social link")}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto", width: buttonSizeCss, height: buttonSizeCss, borderRadius: radius, color: iconColor, background: String(props.iconBackground || props.backgroundColor || "#0c2f55"), textDecoration: "none" }}
+            >
+              {image ? <img src={image} alt="" style={{ width: iconSizeCss, height: iconSizeCss, objectFit: "contain" }} /> : SocialIcon ? <SocialIcon size={22} style={{ width: iconSizeCss, height: iconSizeCss, color: iconColor }} /> : null}
+            </a>
+          );
+        })}
+      </div>
+    );
   }
 
   if (node.type === "video") {
@@ -1726,18 +2332,35 @@ function PreviewNode({
 
   if (node.type === "icon-box") {
     const position = String(props.iconPosition || "top");
+    const iconName = typeof props.iconName === "string" ? props.iconName : "";
+    const Icon = iconName ? themeIcons[iconName] : null;
+    const iconImage = safeMediaUrl(String(props.iconImage || ""));
+    const iconSizeCss = cssLength(props.iconSize, "40px");
+    const symbol = typeof props.symbol === "string" ? props.symbol : "";
+    const hasIcon = Boolean(iconImage || Icon || symbol);
+
     return (
       <div
         {...commonProps}
         style={{
           ...inlineStyle,
-          display: "flex",
-          flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column",
-          alignItems: "center",
-          gap: 12,
+          display: inlineStyle.display || "flex",
+          flexDirection: inlineStyle.flexDirection || (position === "left" ? "row" : position === "right" ? "row-reverse" : "column"),
+          alignItems: inlineStyle.alignItems || "center",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          flexWrap: inlineStyle.flexWrap || "nowrap",
+          gap: inlineStyle.gap || cssLength(props.gap, "12px"),
         }}
       >
-        <div style={{ fontSize: 30, color: String(props.iconColor || "#3984e8") }}>{props.iconImage ? <img src={safeMediaUrl(String(props.iconImage))} alt="" style={{ width: Number(props.iconSize || 40), height: Number(props.iconSize || 40), objectFit: "contain" }} /> : (() => { const Icon = themeIcons[String(props.iconName || "")]; return Icon ? <Icon size={Number(props.iconSize || 40)} /> : String(props.symbol || "★"); })()}</div>
+        {hasIcon ? (
+          <div style={{ fontSize: iconSizeCss, color: String(props.iconColor || "#3984e8"), flex: "0 0 auto" }}>
+            {iconImage ? (
+              <img src={iconImage} alt="" style={{ width: iconSizeCss, height: iconSizeCss, objectFit: "contain" }} />
+            ) : Icon ? (
+              <Icon size={40} style={{ width: iconSizeCss, height: iconSizeCss, color: String(props.iconColor || "#3984e8") }} />
+            ) : symbol}
+          </div>
+        ) : null}
         <div>
           <h3>{String(props.title || "Title")}</h3>
           <p>{String(props.description || "")}</p>
@@ -1770,10 +2393,12 @@ function PreviewNode({
         {...commonProps}
         style={{
           ...inlineStyle,
-          display: "flex",
-          flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column",
-          alignItems: "center",
-          gap: 12,
+          display: inlineStyle.display || "flex",
+          flexDirection: inlineStyle.flexDirection || (position === "left" ? "row" : position === "right" ? "row-reverse" : "column"),
+          alignItems: inlineStyle.alignItems || "center",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          flexWrap: inlineStyle.flexWrap || "nowrap",
+          gap: inlineStyle.gap || 12,
         }}
       >
         {props.link ? (
@@ -1812,11 +2437,15 @@ function PreviewNode({
         action="/search"
         style={{
           ...inlineStyle,
-          display: "flex",
+          display: inlineStyle.display || "flex",
+          flexDirection: inlineStyle.flexDirection || "row",
+          alignItems: inlineStyle.alignItems || "center",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          flexWrap: inlineStyle.flexWrap || "nowrap",
           width: inlineStyle.width || "100%",
-          maxWidth: "100%",
+          maxWidth: inlineStyle.maxWidth || "100%",
           minWidth: 0,
-          gap: 8,
+          gap: inlineStyle.gap || 8,
           boxSizing: "border-box",
         }}
       >
@@ -1835,14 +2464,95 @@ function PreviewNode({
   }
 
   if (node.type === "menu") {
-    if (device === "mobile" && props.mobileToggle !== false) {
-      const OpenIcon = themeIcons[String(props.openIcon || "Menu")] || Menu;
-      const CloseIcon = themeIcons[String(props.closeIcon || "")] || X;
+    const menuBreakpoint = Math.max(320, Math.min(1920, Number(props.mobileBreakpoint || 1024)));
+    const showMobileMenu = device === "mobile" || (device === "tablet" && menuBreakpoint >= 768);
+    if (showMobileMenu && props.mobileToggle !== false) {
+      const openIconName = Object.prototype.hasOwnProperty.call(props, "openIcon")
+        ? String(props.openIcon || "")
+        : "Menu";
+      const closeIconName = Object.prototype.hasOwnProperty.call(props, "closeIcon")
+        ? String(props.closeIcon || "")
+        : "X";
+      const OpenIcon = openIconName ? themeIcons[openIconName] : null;
+      const CloseIcon = closeIconName ? themeIcons[closeIconName] : null;
+      const mobileMenuAlignment = props.alignment === "center"
+        ? "center"
+        : props.alignment === "right"
+          ? "flex-end"
+          : props.alignment === "justify"
+            ? "space-between"
+            : "flex-start";
+      const mobilePanelGradient = props.mobilePanelBackgroundType === "gradient" || (!props.mobilePanelBackgroundType && Boolean(props.mobilePanelGradient));
+      const mobileMenuStyleMap = props.menuItemStyles && typeof props.menuItemStyles === "object"
+        ? props.menuItemStyles as Record<string, Record<string, Record<string, unknown>>>
+        : {};
+      const mobileMenuStyleFor = (state: "normal" | "hover" | "active") => ({
+        ...(mobileMenuStyleMap.desktop?.[state] || {}),
+        ...(mobileMenuStyleMap[device]?.[state] || {}),
+      });
+      const mobilePreviewItems = (entries: unknown[], depth = 0): ReactNode => entries.map((entry, index) => {
+          if (!entry || typeof entry !== "object") return null;
+          const menuItem = entry as Record<string, unknown>;
+          const itemId = String(menuItem.id || `${depth}-${index}-${menuItem.label || menuItem.title || "item"}`);
+          const iconName = String(menuItem.iconName || props.itemIconName || "");
+          const ItemIcon = iconName ? themeIcons[iconName] : null;
+          const ItemImage = safeMediaUrl(String(menuItem.iconImage || ""));
+          const label = String(menuItem.label || menuItem.title || "Menu item");
+          const nestedItems = Array.isArray(menuItem.children) ? menuItem.children : [];
+          const normalStyle = mobileMenuStyleFor("normal");
+          const hoverStyle = mobileMenuStyleFor("hover");
+          const normalGradient = normalStyle.backgroundGradient && typeof normalStyle.backgroundGradient === "object"
+            ? normalStyle.backgroundGradient as Record<string, unknown>
+            : null;
+          const itemBackground = normalGradient
+            ? `linear-gradient(${Number(normalGradient.angle ?? 135)}deg, ${String(normalGradient.color1 || "#ffffff")}, ${String(normalGradient.color2 || "#eaf1fb")})`
+            : String(normalStyle.backgroundColor || "transparent");
+          return (
+            <div key={itemId}>
+              <div
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.color = String(hoverStyle.color || normalStyle.color || props.mobilePanelColor || "#1f2937");
+                  if (hoverStyle.backgroundGradient && typeof hoverStyle.backgroundGradient === "object") {
+                    const gradient = hoverStyle.backgroundGradient as Record<string, unknown>;
+                    event.currentTarget.style.background = `linear-gradient(${Number(gradient.angle ?? 135)}deg, ${String(gradient.color1 || "#ffffff")}, ${String(gradient.color2 || "#eaf1fb")})`;
+                  } else {
+                    event.currentTarget.style.background = String(hoverStyle.backgroundColor || itemBackground);
+                  }
+                  const icon = event.currentTarget.querySelector<HTMLElement>("[data-preview-menu-icon]");
+                  if (icon) icon.style.color = String(hoverStyle.iconColor || hoverStyle.color || normalStyle.iconColor || props.mobilePanelIconColor || "#1f2937");
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.color = String(normalStyle.color || props.mobilePanelColor || "#1f2937");
+                  event.currentTarget.style.background = itemBackground;
+                  const icon = event.currentTarget.querySelector<HTMLElement>("[data-preview-menu-icon]");
+                  if (icon) icon.style.color = String(normalStyle.iconColor || props.mobilePanelIconColor || props.mobilePanelColor || "#1f2937");
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "10px 8px",
+                  paddingLeft: 8 + depth * 14,
+                  borderRadius: 5,
+                  color: String(normalStyle.color || props.mobilePanelColor || "#1f2937"),
+                  background: itemBackground,
+                  cursor: "default",
+                  transition: "color 140ms ease, background 140ms ease",
+                }}
+              >
+                {ItemImage ? <img data-preview-menu-icon="true" src={ItemImage} alt="" style={{ width: 16, height: 16, objectFit: "contain", flex: "0 0 auto" }} /> : ItemIcon ? <ItemIcon data-preview-menu-icon="true" size={16} style={{ color: String(normalStyle.iconColor || props.mobilePanelIconColor || props.mobilePanelColor || "#1f2937"), flex: "0 0 auto" }} /> : null}
+                <span>{label}</span>
+                {nestedItems.length ? <ChevronDown size={14} style={{ marginLeft: "auto" }} /> : null}
+              </div>
+              {nestedItems.length ? <div>{mobilePreviewItems(nestedItems, depth + 1)}</div> : null}
+            </div>
+          );
+        });
       return (
         <nav
           {...commonProps}
           aria-label="Mobile navigation preview"
-          style={{ ...inlineStyle, position: "relative" }}
+          style={{ ...inlineStyle, display: "flex", alignItems: "center", justifyContent: mobileMenuAlignment, width: inlineStyle.width || "100%", position: "relative", boxSizing: "border-box" }}
         >
           <button
             type="button"
@@ -1852,48 +2562,84 @@ function PreviewNode({
               event.stopPropagation();
               setMobileMenuOpen((open) => !open);
             }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = String(props.toggleHoverIconColor || props.iconColor || "#3984e8");
+              event.currentTarget.style.backgroundColor = String(props.toggleHoverBackgroundColor || "transparent");
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = String(props.iconColor || "#0c2f55");
+              event.currentTarget.style.backgroundColor = String(props.toggleBackgroundColor || "transparent");
+            }}
             style={{
               ...BUTTON_STYLE,
               border: 0,
               padding: 6,
-              background: "transparent",
+              background: String(props.toggleBackgroundColor || "transparent"),
               color: String(props.iconColor || "#0c2f55"),
             }}
           >
-            {mobileMenuOpen ? <CloseIcon size={22} /> : <OpenIcon size={22} />}
+            {mobileMenuOpen
+              ? CloseIcon ? <CloseIcon size={22} /> : null
+              : OpenIcon ? <OpenIcon size={22} /> : null}
           </button>
           {mobileMenuOpen ? (
             <div
+              role="presentation"
+              onClick={() => setMobileMenuOpen(false)}
               style={{
                 position: "absolute",
-                zIndex: 30,
-                top: "100%",
+                zIndex: 80,
+                top: 0,
+                left: 0,
                 right: 0,
-                minWidth: String(props.mobileWidth || "260px"),
-                maxWidth: "90vw",
-                padding: 14,
-                background: "#fff",
-                color: "#1f2937",
-                boxShadow: "0 8px 24px rgba(15,23,42,.18)",
+                minHeight: "min(560px, 75vh)",
+                display: "flex",
+                justifyContent: props.mobilePosition === "left" ? "flex-start" : "flex-end",
+                alignItems: "stretch",
+                background: String(props.mobileOverlayColor || "rgba(15,23,42,.48)"),
+                boxShadow: "0 8px 24px rgba(15,23,42,.12)",
               }}
             >
-              {(Array.isArray(props.items) ? props.items : []).map((item, index) => {
-                if (!item || typeof item !== "object") return null;
-                const menuItem = item as Record<string, unknown>;
-                const ItemIcon = themeIcons[String(props.itemIconName || "")];
-                return (
-                  <div key={String(menuItem.id || index)} style={{ padding: "8px 0" }}>
-                    {ItemIcon ? (
-                      <ItemIcon
-                        size={16}
-                        className={styles.menuItemIcon}
-                        style={{ color: String(props.iconColor || "#0c2f55") }}
-                      />
-                    ) : null}
-                    {String(menuItem.label || menuItem.title || "Menu item")}
-                  </div>
-                );
-              })}
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Mobile navigation preview"
+                onClick={(event) => event.stopPropagation()}
+                style={{
+                  width: props.mobileLayout === "fullscreen" ? "100%" : String(props.mobileWidth || "280px"),
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  minHeight: props.mobileLayout === "dropdown" ? "auto" : "min(560px, 75vh)",
+                  maxHeight: props.mobileLayout === "dropdown" ? "min(560px, 75vh)" : "min(560px, 75vh)",
+                  overflowY: "auto",
+                  boxSizing: "border-box",
+                  padding: 16,
+                  backgroundColor: String(props.mobilePanelBackground || "#ffffff"),
+                  backgroundImage: mobilePanelGradient && props.mobilePanelGradient && typeof props.mobilePanelGradient === "object"
+                    ? `linear-gradient(${Number((props.mobilePanelGradient as Record<string, unknown>).angle ?? 135)}deg, ${String((props.mobilePanelGradient as Record<string, unknown>).color1 || "#ffffff")}, ${String((props.mobilePanelGradient as Record<string, unknown>).color2 || "#eaf1fb")})`
+                    : undefined,
+                  alignSelf: props.mobileLayout === "dropdown" ? "flex-start" : "stretch",
+                  color: String(props.mobilePanelColor || "#1f2937"),
+                  boxShadow: "0 8px 24px rgba(15,23,42,.18)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid rgba(148,163,184,.25)" }}>
+                  {props.mobileLogo ? <a href={String(props.mobileLogoLinkType === "homepage" ? "/" : props.mobileLogoLinkType === "current-page" ? "#" : props.mobileLogoLink || "/")} onClick={(event) => event.preventDefault()} style={{ display: "block", minWidth: 0, maxWidth: "calc(100% - 48px)" }}><img src={safeMediaUrl(String(props.mobileLogo))} alt={String(props.mobileLogoAlt || "Mobile menu logo")} style={{ display: "block", maxWidth: 180, maxHeight: 54, objectFit: "contain" }} /></a> : <strong>Menu</strong>}
+                  <button
+                    type="button"
+                    aria-label="Close mobile menu preview"
+                    onClick={() => setMobileMenuOpen(false)}
+                    onMouseEnter={(event) => { event.currentTarget.style.color = String(props.closeIconHoverColor || "#3984e8"); }}
+                    onMouseLeave={(event) => { event.currentTarget.style.color = String(props.closeIconColor || props.iconColor || "#0c2f55"); }}
+                    style={{ ...BUTTON_STYLE, flex: "0 0 auto", color: String(props.closeIconColor || props.iconColor || "#0c2f55"), background: "transparent", border: 0 }}
+                  >
+                    {CloseIcon ? <CloseIcon size={20} /> : null}
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 12 }}>
+                  {mobilePreviewItems(Array.isArray(props.items) ? props.items : [])}
+                </div>
+              </div>
             </div>
           ) : null}
         </nav>
@@ -1906,7 +2652,9 @@ function PreviewNode({
         ? "center"
         : props.alignment === "right"
           ? "flex-end"
-          : "flex-start";
+          : props.alignment === "justify"
+            ? "space-between"
+            : "flex-start";
     const menuItems = Array.isArray(props.items)
       ? (props.items as Array<{
           id?: string;
@@ -1930,13 +2678,13 @@ function PreviewNode({
             href={item.url || item.href || "#"}
             target={item.target === "_blank" ? "_blank" : undefined}
             rel={item.target === "_blank" ? "noopener noreferrer" : undefined}
-            style={{ color: "inherit" }}
+            style={{ color: "var(--builder-menu-text-color, inherit)", backgroundColor: "var(--builder-menu-background-color, transparent)" }}
           >
             {ItemIcon ? (
               <ItemIcon
                 size={16}
                 className={styles.menuItemIcon}
-                style={{ color: String(props.iconColor || "#0c2f55") }}
+                style={{ color: "var(--builder-menu-item-icon-color, currentColor)" }}
               />
             ) : null}
             {item.label || item.title || "Menu item"}
@@ -1952,7 +2700,7 @@ function PreviewNode({
     };
 
     const menuItemStyles = props.menuItemStyles && typeof props.menuItemStyles === "object"
-      ? props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
+      ? props.menuItemStyles as Record<string, Record<string, Record<string, unknown>>>
       : {};
     const desktopMenuStyles = menuItemStyles.desktop || {};
     const selectedMenuStyles = menuItemStyles[device] || {};
@@ -1964,15 +2712,26 @@ function PreviewNode({
           ...(selectedMenuStyles[state] || {}),
         },
       ]),
-    ) as Record<string, Record<string, string>>;
+    ) as Record<string, Record<string, unknown>>;
     const cssColor = (value: unknown) => typeof value === "string" && /^(#[\da-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i.test(value) ? value : "";
     const menuSelectorId = node.id.replace(/[^a-zA-Z0-9_-]/g, "_");
     const menuSelector = `[data-builder-node-id="${menuSelectorId}"]`;
-    const stateDeclarations = (state: Record<string, string> | undefined) => {
+    const stateDeclarations = (state: Record<string, unknown> | undefined) => {
       if (!state) return "";
       const declarations = [
-        cssColor(state.color) ? `color:${cssColor(state.color)} !important` : "",
-        cssColor(state.backgroundColor) ? `background-color:${cssColor(state.backgroundColor)} !important` : "",
+        cssColor(state.iconColor) ? `--builder-menu-item-icon-color:${cssColor(state.iconColor)}` : "",
+        cssColor(state.color) ? `--builder-menu-text-color:${cssColor(state.color)}` : "",
+        cssColor(state.backgroundColor) ? `--builder-menu-background-color:${cssColor(state.backgroundColor)}` : "",
+        Object.prototype.hasOwnProperty.call(state, "backgroundGradient")
+          ? (() => {
+              const gradient = state.backgroundGradient && typeof state.backgroundGradient === "object"
+                ? state.backgroundGradient as Record<string, unknown>
+                : null;
+              return gradient
+                ? `background-image:linear-gradient(${Math.max(0, Math.min(360, Number(gradient.angle ?? 135)))}deg, ${cssColor(gradient.color1) || "#ffffff"}, ${cssColor(gradient.color2) || "#eaf1fb"})`
+                : "background-image:none";
+            })()
+          : cssColor(state.backgroundColor) ? "background-image:none" : "",
       ].filter(Boolean);
       return declarations.join(";");
     };
@@ -1983,6 +2742,7 @@ function PreviewNode({
       normalDeclarations ? `${menuSelector} a{${normalDeclarations}}` : "",
       hoverDeclarations ? `${menuSelector} a:hover{${hoverDeclarations}}` : "",
       activeDeclarations ? `${menuSelector} > ul > li:first-child > a{${activeDeclarations}}` : "",
+      `${menuSelector} a svg{color:var(--builder-menu-item-icon-color, inherit)}`,
     ].filter(Boolean).join("\n");
 
     return (
@@ -1994,7 +2754,7 @@ function PreviewNode({
           display: "flex",
           flexDirection: menuDirection,
           justifyContent: menuAlignment,
-          width: inlineStyle.width || "max-content",
+          width: inlineStyle.width || "100%",
         }}
       >
         {previewMenuCss ? <style>{previewMenuCss}</style> : null}
@@ -2016,7 +2776,7 @@ function PreviewNode({
               getResponsiveValue(node.styles.rowGap, device) ||
               getResponsiveValue(node.styles.gap, device) ||
               "18px",
-            width: "max-content",
+            width: "100%",
           }}
         >
           {menuItems.map(renderMenuItem)}
@@ -2387,9 +3147,13 @@ function PreviewNode({
         {...commonProps}
         style={{
           ...inlineStyle,
-          display: "flex",
-          gap: 12,
-          overflowX: "auto",
+          display: inlineStyle.display || "flex",
+          flexDirection: inlineStyle.flexDirection || "row",
+          alignItems: inlineStyle.alignItems || "stretch",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          flexWrap: inlineStyle.flexWrap || "nowrap",
+          gap: inlineStyle.gap || 12,
+          overflowX: (inlineStyle.overflow || "auto") as CSSProperties["overflowX"],
         }}
       >
         {items.map((item, index) => {
@@ -2424,12 +3188,16 @@ function PreviewNode({
         {...commonProps}
         style={{
           ...inlineStyle,
-          display: "grid",
-          gridTemplateColumns: `repeat(${Math.max(
+          display: inlineStyle.display || "grid",
+          gridTemplateColumns: inlineStyle.gridTemplateColumns || `repeat(${Math.max(
             1,
             Number(props.columns || 3),
           )}, minmax(0, 1fr))`,
-          gap: 12,
+          flexDirection: inlineStyle.flexDirection || "row",
+          flexWrap: inlineStyle.flexWrap || "wrap",
+          alignItems: inlineStyle.alignItems || "stretch",
+          justifyContent: inlineStyle.justifyContent || "flex-start",
+          gap: inlineStyle.gap || 12,
         }}
       >
         {Array.from(
@@ -2589,6 +3357,7 @@ function SortableCanvasNode({
   node,
   selectedId,
   device,
+  parentNode,
   onSelect,
   onDelete,
   onDuplicate,
@@ -2597,6 +3366,7 @@ function SortableCanvasNode({
   node: BuilderNode;
   selectedId: string | null;
   device: BuilderDevice;
+  parentNode?: BuilderNode | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onDuplicate: (node: BuilderNode) => void;
@@ -2637,7 +3407,7 @@ function SortableCanvasNode({
         selected ? styles.canvasNodeSelected : ""
       } ${sortable.isDragging ? styles.canvasNodeDragging : ""}`}
       style={{
-        ...getCanvasFlexItemStyle(node, device),
+        ...getCanvasFlexItemStyle(node, device, parentNode),
         transform: CSS.Transform.toString(sortable.transform),
         transition: sortable.transition,
         opacity: node.enabled ? 1 : 0.45,
@@ -2670,10 +3440,32 @@ function SortableCanvasNode({
           <Move size={13} />
         </button>
 
-        <span>
-          {node.label}
-          {locked ? " 🔒" : ""}
-          {!node.enabled ? " (Hidden)" : ""}
+        <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <span>
+            {node.label}
+            {locked ? " 🔒" : ""}
+            {!node.enabled ? " (Hidden)" : ""}
+          </span>
+          {(() => {
+            const widthInfo = getCanvasWidthIndicator(node, device, parentNode);
+            if (!widthInfo) return null;
+            return (
+              <span
+                title={`Container width: ${widthInfo.label}`}
+                aria-label={`Container width ${widthInfo.label}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", whiteSpace: "nowrap" }}>
+                  {widthInfo.label}
+                </span>
+                {widthInfo.percentage !== null ? (
+                  <span style={{ display: "inline-block", width: 42, height: 4, borderRadius: 4, overflow: "hidden", background: "#dbeafe" }}>
+                    <span style={{ display: "block", height: "100%", width: `${Math.max(0, Math.min(100, widthInfo.percentage))}%`, borderRadius: 4, background: "#3984e8" }} />
+                  </span>
+                ) : null}
+              </span>
+            );
+          })()}
         </span>
 
         <div className={styles.nodeActions}>
@@ -2724,6 +3516,7 @@ function SortableCanvasNode({
                       node={child}
                       selectedId={selectedId}
                       device={device}
+                      parentNode={node}
                       onSelect={onSelect}
                       onDelete={onDelete}
                       onDuplicate={onDuplicate}
@@ -3019,6 +3812,14 @@ export default function UniversalBuilder({ target }: Props) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  // Page/Post builders show the site's saved Header and Footer around the
+  // editable page canvas, just like a front-end template preview. These nodes
+  // are read-only here; they remain editable in Header/Footer Builder.
+  const [globalHeaderPreview, setGlobalHeaderPreview] =
+    useState<GlobalTemplatePreview | null>(null);
+  const [globalFooterPreview, setGlobalFooterPreview] =
+    useState<GlobalTemplatePreview | null>(null);
+
   const [widgetSearch, setWidgetSearch] = useState("");
 
   const [history, setHistory] = useState<HistoryState[]>([]);
@@ -3222,6 +4023,78 @@ export default function UniversalBuilder({ target }: Props) {
   useEffect(() => {
     void loadDocument();
   }, [loadDocument]);
+
+  useEffect(() => {
+    if (target.kind === "header" || target.kind === "footer") {
+      setGlobalHeaderPreview(null);
+      setGlobalFooterPreview(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadTemplate = async (
+      key: "header:primary" | "footer:primary",
+    ): Promise<GlobalTemplatePreview | null> => {
+      const response = await fetch(
+        `/api/admin/builder/documents?documentKey=${encodeURIComponent(key)}`,
+        { cache: "no-store" },
+      );
+
+      if (!response.ok) return null;
+
+      const result = (await response.json()) as {
+        success?: boolean;
+        document?: {
+          title?: unknown;
+          status?: unknown;
+          layout?: { version?: unknown; root?: unknown };
+        } | null;
+      };
+
+      const document = result.document;
+      if (
+        !result.success ||
+        !document ||
+        document.layout?.version !== 1 ||
+        !Array.isArray(document.layout.root)
+      ) {
+        return null;
+      }
+
+      return {
+        title: typeof document.title === "string" ? document.title : key,
+        status: typeof document.status === "string" ? document.status : "DRAFT",
+        root: document.layout.root as BuilderNode[],
+      };
+    };
+
+    const loadGlobalTemplates = async () => {
+      try {
+        const [header, footer] = await Promise.all([
+          loadTemplate("header:primary"),
+          loadTemplate("footer:primary"),
+        ]);
+
+        if (!cancelled) {
+          setGlobalHeaderPreview(header);
+          setGlobalFooterPreview(footer);
+        }
+      } catch (templateError) {
+        console.warn("Unable to load global Header/Footer preview:", templateError);
+        if (!cancelled) {
+          setGlobalHeaderPreview(null);
+          setGlobalFooterPreview(null);
+        }
+      }
+    };
+
+    void loadGlobalTemplates();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [target.kind]);
 
   useEffect(() => {
     let active = true;
@@ -3567,6 +4440,19 @@ export default function UniversalBuilder({ target }: Props) {
       updateTree(layout.root, selectedId, (node) => ({
         ...node,
         props: setBuilderPropForDevice(node.props, key, value, device),
+      })),
+    );
+  };
+
+  const updateResponsiveProps = (values: Record<string, unknown>) => {
+    if (!selectedId) return;
+    commitRoot(
+      updateTree(layout.root, selectedId, (node) => ({
+        ...node,
+        props: Object.entries(values).reduce(
+          (currentProps, [key, value]) => setBuilderPropForDevice(currentProps, key, value, device),
+          node.props,
+        ),
       })),
     );
   };
@@ -3963,6 +4849,17 @@ export default function UniversalBuilder({ target }: Props) {
               ...node.props,
               iconImage: mediaUrl,
               iconImageId: item.id,
+            },
+          };
+        }
+
+        if (mediaTarget === "menuMobileLogo") {
+          return {
+            ...node,
+            props: {
+              ...node.props,
+              mobileLogo: mediaUrl,
+              mobileLogoMediaId: item.id,
             },
           };
         }
@@ -4449,6 +5346,7 @@ export default function UniversalBuilder({ target }: Props) {
     if (!selectedNode) return null;
 
     const node = selectedNode;
+    const deviceProps = resolveBuilderProps(node.props, device);
     const slideEntries = Array.isArray(node.props.slides)
       ? node.props.slides.map((slide) =>
           slide && typeof slide === "object"
@@ -4526,7 +5424,7 @@ export default function UniversalBuilder({ target }: Props) {
       const base = node.type === "social-icons"
         ? { id: `social-${Date.now()}`, name: "Social", label: "Social", iconName: "Globe", url: "" }
         : node.type === "icon-list"
-          ? { id: `icon-item-${Date.now()}`, text: "New list item", iconName: "Check", url: "" }
+          ? { id: `icon-item-${Date.now()}`, text: "New list item", iconName: "Check", iconImage: "", linkType: "normal", dynamicLink: "current-page", url: "", linkTarget: "_self" }
           : node.type === "price-list"
             ? { id: `price-${Date.now()}`, title: "Item", price: "", description: "" }
             : { id: `item-${Date.now()}`, title: `Item ${repeaterItems.length + 1}`, content: "" };
@@ -4617,14 +5515,17 @@ export default function UniversalBuilder({ target }: Props) {
           )}
 
           {node.type === "text" && (
-            <Field label="Text Content">
-              <textarea
-                rows={7}
-                value={String(node.props.content || "")}
-                onChange={(event) => updateProps("content", event.target.value)}
-                style={CONTROL_STYLE}
-              />
-            </Field>
+            <>
+              <Field label="Text Content — Visual Editor">
+                <BuilderRichTextEditor
+                  value={String(node.props.content || "")}
+                  onChange={(value) => updateProps("content", value)}
+                />
+              </Field>
+              <p style={{ margin: "-2px 0 12px", color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
+                Use the Code button in the editor toolbar to edit HTML. For widget-specific CSS, use Advanced → Custom CSS; the selector is scoped to this widget.
+              </p>
+            </>
           )}
 
           {node.type === "html" && (
@@ -4699,7 +5600,7 @@ export default function UniversalBuilder({ target }: Props) {
                     const SelectedIcon = themeIcons[String(node.props.iconName || "")];
                     return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />;
                   })()}
-                  {String(node.props.iconName || "Choose Icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
                 </button>
               </Field>
 
@@ -4746,14 +5647,14 @@ export default function UniversalBuilder({ target }: Props) {
                 ) : null}
               </div>
 
-              <SelectControl
+              <SegmentedControl
                 label="Icon Position"
-                value={String(node.props.iconPosition || "before")}
+                value={String(deviceProps.iconPosition || "before")}
                 options={[
-                  { label: "Before Text", value: "before" },
-                  { label: "After Text", value: "after" },
+                  { label: "", value: "before", title: "Before Text", icon: "ArrowLeft" },
+                  { label: "", value: "after", title: "After Text", icon: "ArrowRight" },
                 ]}
-                onChange={(value) => updateProps("iconPosition", value)}
+                onChange={(value) => updateResponsiveProp("iconPosition", value)}
               />
 
               <TextControl
@@ -5035,7 +5936,7 @@ export default function UniversalBuilder({ target }: Props) {
               <Field label="Icon Library">
                 <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
                   {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
-                  {String(node.props.iconName || "Choose Icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
                 </button>
               </Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
@@ -5043,11 +5944,12 @@ export default function UniversalBuilder({ target }: Props) {
                 <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("widgetIcon")}><Upload size={14} /> Upload</button>
               </div>
               {node.props.iconImage ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><img src={safeMediaUrl(String(node.props.iconImage))} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} /><button type="button" style={BUTTON_STYLE} onClick={() => clearProps("iconImage", "iconImageId")}>Remove image</button></div> : null}
-              <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 40)} onChange={(value) => updateProps("iconSize", Number(value))} />
-              <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} />
+              <UnitControl label="Icon Size" value={String(deviceProps.iconSize || "40px")} onChange={(value) => updateResponsiveProp("iconSize", value)} allowAuto={false} />
+              <UnitControl label="Icon / Content Gap" value={String(deviceProps.gap || "12px")} onChange={(value) => updateResponsiveProp("gap", value)} allowAuto={false} />
+              <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
               <TextControl
                 label="Icon Symbol"
-                value={String(node.props.symbol || "★")}
+                value={String(node.props.symbol ?? "★")}
                 onChange={(value) => updateProps("symbol", value)}
               />
               <TextControl
@@ -5060,14 +5962,16 @@ export default function UniversalBuilder({ target }: Props) {
                 value={String(node.props.description || "")}
                 onChange={(value) => updateProps("description", value)}
               />
-              <SelectControl
+              <SegmentedControl
                 label="Icon Position"
-                value={String(node.props.iconPosition || "top")}
-                options={["top", "left", "right"].map((value) => ({
-                  label: value,
-                  value,
-                }))}
-                onChange={(value) => updateProps("iconPosition", value)}
+                value={String(deviceProps.iconPosition || "top")}
+                options={[
+                  { label: "", value: "top", title: "Top", icon: "ArrowUp" },
+                  { label: "", value: "bottom", title: "Bottom", icon: "ArrowDown" },
+                  { label: "", value: "left", title: "Left", icon: "ArrowLeft" },
+                  { label: "", value: "right", title: "Right", icon: "ArrowRight" },
+                ]}
+                onChange={(value) => updateResponsiveProp("iconPosition", value)}
               />
             </>
           )}
@@ -5245,169 +6149,136 @@ export default function UniversalBuilder({ target }: Props) {
 
           {node.type === "menu" && (
             <>
-              <SelectControl
-                label="Navigation Menu"
-                value={String(node.props.menuId || "")}
-                options={[
-                  { label: "Choose a menu", value: "" },
-                  ...builderMenus.map((menu) => ({
-                    label: menu.name,
-                    value: menu.id,
-                  })),
-                ]}
-                onChange={(menuId) => {
-                if (!selectedId) return;
-                const requestId = ++menuRequestId.current;
-                const menu = builderMenus.find((entry) => entry.id === menuId);
-                const saveMenuSelection = async () => {
-                  try {
-                    let items: BuilderMenuItem[] = [];
-                    if (menuId) {
-                      const location = menu?.location || "HEADER";
-                      const response = await fetch(
-                        `/api/public/menus/${location}?menuId=${encodeURIComponent(menuId)}`,
-                        { cache: "no-store" },
-                      );
-                      const result = await response.json();
-                      if (!response.ok || !result.success) {
-                        throw new Error(
-                          result.message || "Unable to load menu links.",
-                        );
+              <ControlGroup title="Menu Settings" defaultOpen>
+                <SelectControl
+                  label="Select Menu"
+                  value={String(node.props.menuId || "")}
+                  options={[{ label: "Choose a menu", value: "" }, ...builderMenus.map((menu) => ({ label: menu.name, value: menu.id }))]}
+                  onChange={(menuId) => {
+                    if (!selectedId) return;
+                    const requestId = ++menuRequestId.current;
+                    const menu = builderMenus.find((entry) => entry.id === menuId);
+                    const saveMenuSelection = async () => {
+                      try {
+                        let items: BuilderMenuItem[] = [];
+                        if (menuId) {
+                          const location = menu?.location || "HEADER";
+                          const response = await fetch(`/api/public/menus/${location}?menuId=${encodeURIComponent(menuId)}`, { cache: "no-store" });
+                          const result = await response.json();
+                          if (!response.ok || !result.success) throw new Error(result.message || "Unable to load menu links.");
+                          items = normalizePublicMenuItems(result.menu?.items);
+                        }
+                        if (menuRequestId.current !== requestId) return;
+                        commitRoot(updateTree(layout.root, selectedId, (currentNode) => ({
+                          ...currentNode,
+                          props: { ...currentNode.props, menuId, menuLocation: menu?.location || "HEADER", items },
+                        })));
+                        setError("");
+                      } catch (menuError) {
+                        if (menuRequestId.current !== requestId) return;
+                        setError(menuError instanceof Error ? menuError.message : "Unable to load menu links.");
                       }
-                      items = normalizePublicMenuItems(result.menu?.items);
-                    }
+                    };
+                    void saveMenuSelection();
+                  }}
+                />
+                <SelectControl label="Menu Layout" value={String(node.props.orientation || "horizontal")} options={[{ label: "Horizontal", value: "horizontal" }, { label: "Vertical", value: "vertical" }]} onChange={(value) => updateProps("orientation", value)} />
+                <SelectControl label="Horizontal Menu Position" value={String(deviceProps.alignment || "left")} options={[{ label: "Left", value: "left" }, { label: "Center", value: "center" }, { label: "Right", value: "right" }, { label: "Justified", value: "justify" }]} onChange={(value) => updateResponsiveProp("alignment", value)} />
+                <SelectControl label="Dropdown Open As" value={String(node.props.dropdownOpenAs || "hover")} options={[{ label: "Hover", value: "hover" }, { label: "Click", value: "click" }]} onChange={(value) => updateProps("dropdownOpenAs", value)} />
+                <Field label="Menu Item Icon (Optional)">
+                  <button
+                    type="button"
+                    style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => setIconPickerTarget({ kind: "nodeProp", key: "itemIconName", value: String(node.props.itemIconName || "") })}
+                  >
+                    {(() => {
+                      const SelectedIcon = themeIcons[String(node.props.itemIconName || "")];
+                      return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />;
+                    })()}
+                    {String(themeIconLabels[String(node.props.itemIconName || "")] || node.props.itemIconName || "No Icon")}
+                  </button>
+                </Field>
+                <Field label="Submenu Indicator Icon">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                    <button
+                      type="button"
+                      style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                      disabled={node.props.submenuIndicator === "none" || node.props.submenuIndicator === ""}
+                      onClick={() => setIconPickerTarget({ kind: "nodeProp", key: "submenuIndicator", value: String(node.props.submenuIndicator ?? "ChevronDown") })}
+                    >
+                      {(() => {
+                        const iconName = typeof node.props.submenuIndicator === "string" ? node.props.submenuIndicator : "ChevronDown";
+                        const SelectedIcon = iconName ? themeIcons[iconName] : null;
+                        return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />;
+                      })()}
+                      {node.props.submenuIndicator === "none" || node.props.submenuIndicator === "" ? "No Icon" : String(themeIconLabels[String(node.props.submenuIndicator || "ChevronDown")] || node.props.submenuIndicator || "ChevronDown")}
+                    </button>
+                    <button
+                      type="button"
+                      style={BUTTON_STYLE}
+                      onClick={() => updateProps("submenuIndicator", node.props.submenuIndicator === "none" || node.props.submenuIndicator === "" ? "ChevronDown" : "none")}
+                    >
+                      {node.props.submenuIndicator === "none" || node.props.submenuIndicator === "" ? "Show" : "Hide"}
+                    </button>
+                  </div>
+                </Field>
+                <SelectControl label="Responsive Breakpoint" value={String(node.props.mobileBreakpoint || 1024)} options={[{ label: "Mobile (767px)", value: "767" }, { label: "Tablet (1024px)", value: "1024" }]} onChange={(value) => updateProps("mobileBreakpoint", Number(value))} />
+                <Field label="Enable One Page Menu"><input type="checkbox" checked={Boolean(node.props.onePage)} onChange={(event) => updateProps("onePage", event.target.checked)} /></Field>
+                <Field label="Enable Mobile Menu"><input type="checkbox" checked={node.props.mobileToggle !== false} onChange={(event) => updateProps("mobileToggle", event.target.checked)} /></Field>
+              </ControlGroup>
 
-                    if (menuRequestId.current !== requestId) return;
-                    commitRoot(
-                      updateTree(layout.root, selectedId, (currentNode) => ({
-                        ...currentNode,
-                        props: {
-                          ...currentNode.props,
-                          menuId,
-                          menuLocation: menu?.location || "HEADER",
-                          items,
-                        },
-                      })),
-                    );
-                    setError("");
-                  } catch (menuError) {
-                    if (menuRequestId.current !== requestId) return;
-                    setError(
-                      menuError instanceof Error
-                        ? menuError.message
-                        : "Unable to load menu links.",
-                    );
-                  }
-                };
-                void saveMenuSelection();
-              }}
-              />
-              <SelectControl
-                label="Menu Layout"
-                value={String(node.props.orientation || "horizontal")}
-                options={[
-                  { label: "Horizontal", value: "horizontal" },
-                  { label: "Vertical", value: "vertical" },
-                ]}
-                onChange={(value) => updateProps("orientation", value)}
-              />
-              <SelectControl
-                label="Menu Alignment"
-                value={String(node.props.alignment || "left")}
-                options={[
-                  { label: "Left", value: "left" },
-                  { label: "Center", value: "center" },
-                  { label: "Right", value: "right" },
-                ]}
-                onChange={(value) => updateProps("alignment", value)}
-              />
-              <SelectControl
-                label="Menu Item Icon"
-                value={String(node.props.itemIconName || "")}
-                options={[
-                  { label: "No icon", value: "" },
-                  ...Object.keys(themeIcons).map((name) => ({
-                    label: name,
-                    value: name,
-                  })),
-                ]}
-                onChange={(value) => updateProps("itemIconName", value)}
-              />
-              <Field label="Enable Submenus">
-                <input
-                  type="checkbox"
-                  checked={node.props.dropdown !== false}
-                  onChange={(event) => updateProps("dropdown", event.target.checked)}
-                />
-              </Field>
-              <Field label="Enable Mobile Menu">
-                <input
-                  type="checkbox"
-                  checked={node.props.mobileToggle !== false}
-                  onChange={(event) => updateProps("mobileToggle", event.target.checked)}
-                />
-              </Field>
-              <TextControl
-                label="Mobile Breakpoint (px)"
-                type="number"
-                value={String(node.props.mobileBreakpoint || 767)}
-                onChange={(value) => updateProps("mobileBreakpoint", Number(value))}
-              />
-              <SelectControl
-                label="Mobile Menu Layout"
-                value={String(node.props.mobileLayout || "slide-in")}
-                options={[
-                  { label: "Dropdown", value: "dropdown" },
-                  { label: "Slide In", value: "slide-in" },
-                  { label: "Full Screen", value: "fullscreen" },
-                  { label: "Off Canvas", value: "off-canvas" },
-                ]}
-                onChange={(value) => updateProps("mobileLayout", value)}
-              />
-              <SelectControl
-                label="Mobile Menu Position"
-                value={String(node.props.mobilePosition || "right")}
-                options={[
-                  { label: "Left", value: "left" },
-                  { label: "Right", value: "right" },
-                ]}
-                onChange={(value) => updateProps("mobilePosition", value)}
-              />
-              <UnitControl
-                label="Mobile Menu Width"
-                value={String(node.props.mobileWidth || "320px")}
-                onChange={(value) => updateProps("mobileWidth", value)}
-              />
-              <SelectControl
-                label="Open Menu Icon"
-                value={String(node.props.openIcon || "Menu")}
-                options={[
-                  { label: "Default", value: "" },
-                  ...Object.keys(themeIcons).map((name) => ({
-                    label: name,
-                    value: name,
-                  })),
-                ]}
-                onChange={(value) => updateProps("openIcon", value)}
-              />
-              <SelectControl
-                label="Close Menu Icon"
-                value={String(node.props.closeIcon || "")}
-                options={[
-                  { label: "Default Close Icon", value: "" },
-                  ...Object.keys(themeIcons).map((name) => ({
-                    label: name,
-                    value: name,
-                  })),
-                ]}
-                onChange={(value) => updateProps("closeIcon", value)}
-              />
-              <TextControl
-                label="Mobile Icon Size"
-                type="number"
-                value={String(node.props.mobileIconSize || 24)}
-                onChange={(value) => updateProps("mobileIconSize", Number(value))}
-              />
+              <ControlGroup title="Mobile Menu Settings" defaultOpen={false}>
+                {node.props.mobileLogo ? (
+                  <div style={{ border: "1px solid #dbe3ed", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+                    <img src={safeMediaUrl(String(node.props.mobileLogo))} alt={String(node.props.mobileLogoAlt || "Mobile menu logo")} style={{ display: "block", width: "100%", maxWidth: 180, maxHeight: 70, objectFit: "contain" }} />
+                    <button type="button" style={{ ...BUTTON_STYLE, marginTop: 8, color: "#b42318" }} onClick={() => clearProps("mobileLogo", "mobileLogoMediaId")}>Remove Mobile Logo</button>
+                  </div>
+                ) : null}
+                <Field label="Mobile Menu Logo">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("menuMobileLogo")}><ImageIcon size={14} /> Media Library</button>
+                    <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("menuMobileLogo")}><Upload size={14} /> Upload Image</button>
+                  </div>
+                </Field>
+                <TextControl label="Logo Alt Text" value={String(node.props.mobileLogoAlt || "Mobile menu logo")} onChange={(value) => updateProps("mobileLogoAlt", value)} />
+                <SelectControl label="Menu Link" value={String(node.props.mobileLogoLinkType || "homepage")} options={[{ label: "Default (Home)", value: "homepage" }, { label: "Current Page", value: "current-page" }, { label: "Custom Link", value: "custom" }]} onChange={(value) => updateProps("mobileLogoLinkType", value)} />
+                {node.props.mobileLogoLinkType === "custom" ? <TextControl label="Custom Menu Link" value={String(node.props.mobileLogoLink || "/")} onChange={(value) => updateProps("mobileLogoLink", value)} list="builder-link-targets" onFocus={() => void loadLinkSuggestions()} /> : null}
+                <Field label="Hamburger / Open Icon">
+                  <button
+                    type="button"
+                    style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => setIconPickerTarget({ kind: "nodeProp", key: "openIcon", value: String(node.props.openIcon ?? "Menu") })}
+                  >
+                    {(() => {
+                      const iconName = String(node.props.openIcon ?? "Menu");
+                      const SelectedIcon = iconName ? themeIcons[iconName] : null;
+                      return SelectedIcon ? <SelectedIcon size={18} /> : <Search size={18} />;
+                    })()}
+                    {String(themeIconLabels[String(node.props.openIcon ?? "Menu")] || node.props.openIcon || "No Icon")}
+                  </button>
+                </Field>
+                <Field label="Close Icon">
+                  <button
+                    type="button"
+                    style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => setIconPickerTarget({ kind: "nodeProp", key: "closeIcon", value: String(node.props.closeIcon ?? "X") })}
+                  >
+                    {(() => {
+                      const iconName = String(node.props.closeIcon ?? "X");
+                      const SelectedIcon = iconName ? themeIcons[iconName] : null;
+                      return SelectedIcon ? <SelectedIcon size={18} /> : <Search size={18} />;
+                    })()}
+                    {String(themeIconLabels[String(node.props.closeIcon ?? "X")] || node.props.closeIcon || "No Icon")}
+                  </button>
+                </Field>
+                <SelectControl label="Submenu Click Area" value={String(node.props.submenuClickArea || "icon")} options={[{ label: "Icon Only", value: "icon" }, { label: "Full Menu Text", value: "full" }]} onChange={(value) => updateProps("submenuClickArea", value)} />
+                <Field label="Close Menu on Anchor Click"><input type="checkbox" checked={node.props.closeOnAnchorClick !== false} onChange={(event) => updateProps("closeOnAnchorClick", event.target.checked)} /></Field>
+                <SelectControl label="Mobile Menu Layout" value={String(node.props.mobileLayout || "slide-in")} options={[{ label: "Dropdown", value: "dropdown" }, { label: "Slide In", value: "slide-in" }, { label: "Full Screen", value: "fullscreen" }, { label: "Off Canvas", value: "off-canvas" }]} onChange={(value) => updateProps("mobileLayout", value)} />
+                <SelectControl label="Mobile Menu Position" value={String(node.props.mobilePosition || "right")} options={[{ label: "Left", value: "left" }, { label: "Right", value: "right" }]} onChange={(value) => updateProps("mobilePosition", value)} />
+                <UnitControl label="Mobile Menu Width" value={String(deviceProps.mobileWidth || "320px")} onChange={(value) => updateResponsiveProp("mobileWidth", value)} />
+                <UnitControl label="Mobile Icon Size" value={String(deviceProps.mobileIconSize || "24px")} onChange={(value) => updateResponsiveProp("mobileIconSize", value)} allowAuto={false} />
+              </ControlGroup>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "8px 0 0" }}>Menu pages and Custom Links are managed under Admin → Menus. Select that menu above to load its saved structure.</p>
             </>
           )}
 
@@ -5472,8 +6343,8 @@ export default function UniversalBuilder({ target }: Props) {
           {node.type === "spacer" && (
             <UnitControl
               label="Spacer Height"
-              value={String(node.props.height || "40px")}
-              onChange={(value) => updateProps("height", value)}
+              value={String(deviceProps.height || "40px")}
+              onChange={(value) => updateResponsiveProp("height", value)}
             />
           )}
 
@@ -5493,8 +6364,9 @@ export default function UniversalBuilder({ target }: Props) {
 
               <UnitControl
                 label="Thickness"
-                value={String(node.props.thickness || "1px")}
-                onChange={(value) => updateProps("thickness", value)}
+                value={String(deviceProps.thickness || "1px")}
+                onChange={(value) => updateResponsiveProp("thickness", value)}
+                allowAuto={false}
               />
             </>
           )}
@@ -5504,7 +6376,7 @@ export default function UniversalBuilder({ target }: Props) {
               <Field label="Icon Library">
                 <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
                   {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
-                  {String(node.props.iconName || "Choose Icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
                 </button>
               </Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
@@ -5514,18 +6386,25 @@ export default function UniversalBuilder({ target }: Props) {
               {node.props.iconImage ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><img src={safeMediaUrl(String(node.props.iconImage))} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} /><button type="button" style={BUTTON_STYLE} onClick={() => clearProps("iconImage", "iconImageId")}>Remove image</button></div> : null}
               <TextControl
                 label="Icon Symbol"
-                value={String(node.props.symbol || "★")}
+                value={String(node.props.symbol ?? "★")}
                 onChange={(value) => updateProps("symbol", value)}
               />
 
-              <TextControl
+              <UnitControl
                 label="Icon Size"
-                value={String(node.props.size || 24)}
-                onChange={(value) => updateProps("size", Number(value))}
-                type="number"
+                value={String(deviceProps.size || "24px")}
+                onChange={(value) => updateResponsiveProp("size", value)}
+                allowAuto={false}
               />
             </>
           )}
+
+          {node.type === "icon-list" ? (
+            <ControlGroup title="Layout" defaultOpen>
+              <SegmentedControl label="List Layout" value={String(deviceProps.layout || "list")} options={[{ label: "", value: "list", title: "Vertical List", icon: "List" }, { label: "", value: "inline", title: "Inline", icon: "Rows3" }, { label: "", value: "grid", title: "Grid", icon: "Grid3X3" }]} onChange={(value) => updateResponsiveProp("layout", value)} />
+              {deviceProps.layout === "grid" ? <TextControl label="Columns" type="number" value={String(deviceProps.columns || 2)} onChange={(value) => updateResponsiveProp("columns", Math.max(1, Math.min(6, Number(value) || 1)))} /> : null}
+            </ControlGroup>
+          ) : null}
 
           {(node.type === "accordion" || node.type === "tabs" || node.type === "social-icons" || node.type === "icon-list" || node.type === "price-list") && (
             <ControlGroup title="Items" defaultOpen>
@@ -5537,20 +6416,56 @@ export default function UniversalBuilder({ target }: Props) {
                   </div>
                   {node.type === "social-icons" ? (
                     <>
+                      <Field label="Social / Brand Icon (Optional)">
+                        <button
+                          type="button"
+                          style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                          onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "icons", value: String(entry.iconName || "") })}
+                        >
+                          {(() => {
+                            const SelectedIcon = themeIcons[String(entry.iconName || "")];
+                            return SelectedIcon ? <SelectedIcon size={18} /> : <Search size={18} />;
+                          })()}
+                          {String(themeIconLabels[String(entry.iconName || "")] || entry.iconName || "Choose social / brand icon")}
+                        </button>
+                      </Field>
                       <TextControl label="Label / Network" value={String(entry.label || entry.name || "")} onChange={(value) => updateRepeaterItem(index, { label: value, name: value })} />
                       <TextControl label="URL" value={String(entry.url || "")} onChange={(value) => updateRepeaterItem(index, { url: value })} placeholder="https://..." />
-                      <Field label="Icon">
-                        <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "icons", value: String(entry.iconName || "") })}>{String(entry.iconName || "Choose icon")}</button>
-                      </Field>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button><button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload</button></div>
+                      {entry.iconImage ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                          <img src={safeMediaUrl(String(entry.iconImage))} alt="" style={{ width: 36, height: 36, objectFit: "contain" }} />
+                          <button type="button" style={{ ...BUTTON_STYLE, color: "#b42318" }} onClick={() => updateRepeaterItem(index, { iconImage: "", iconMediaId: "" })}>Remove Icon Image</button>
+                        </div>
+                      ) : null}
                     </>
                   ) : node.type === "icon-list" ? (
-                    <>
-                      <TextControl label="Text" value={String(entry.text || entry.label || "")} onChange={(value) => updateRepeaterItem(index, { text: value })} />
-                      <TextControl label="Link URL" value={String(entry.url || "")} onChange={(value) => updateRepeaterItem(index, { url: value })} />
-                      <Field label="Icon"><button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "items", value: String(entry.iconName || "Check") })}>{String(entry.iconName || "Choose icon")}</button></Field>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button><button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload</button></div>
-                    </>
+                    <details style={{ border: "1px solid #dbe3ed", borderRadius: 7, marginTop: 8, background: "#fff" }}>
+                      <summary style={{ cursor: "pointer", padding: "10px 12px", fontSize: 12, fontWeight: 700, color: "#334155" }}>{String(entry.text || entry.label || `List item ${index + 1}`)}</summary>
+                      <div style={{ padding: 12, borderTop: "1px solid #e2e8f0" }}>
+                        <TextControl label="Text" value={String(entry.text || entry.label || "")} onChange={(value) => updateRepeaterItem(index, { text: value })} />
+                        <Field label="Icon">
+                          <div style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: 10, alignItems: "stretch" }}>
+                            <div style={{ minHeight: 64, display: "flex", alignItems: "center", justifyContent: "center", background: "#f1f5f9", border: "1px solid #dbe3ed", borderRadius: 6 }}>
+                              {entry.iconImage ? <img src={safeMediaUrl(String(entry.iconImage))} alt="" style={{ width: 40, height: 40, objectFit: "contain" }} /> : (() => { const iconName = typeof entry.iconName === "string" ? entry.iconName : "Check"; const IconPreview = iconName ? themeIcons[iconName] : null; return IconPreview ? <IconPreview size={30} color={String(node.props.iconColor || "#3984e8")} /> : <span style={{ color: "#94a3b8", fontSize: 11 }}>No Icon</span>; })()}
+                            </div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              <button type="button" style={BUTTON_STYLE} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "items", value: String(entry.iconName ?? "Check") })}>{String(themeIconLabels[String(entry.iconName || "")] || entry.iconName || "No Icon — choose icon")}</button>
+                              <button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button>
+                              <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload Image</button>
+                            </div>
+                          </div>
+                          {entry.iconImage ? <button type="button" style={{ ...BUTTON_STYLE, marginTop: 7, color: "#b42318" }} onClick={() => updateRepeaterItem(index, { iconImage: "", iconMediaId: "" })}>Remove Image Icon</button> : null}
+                        </Field>
+                        <SelectControl label="Link Type" value={String(entry.linkType || "normal")} options={[{ label: "Custom Link", value: "normal" }, { label: "Dynamic Link", value: "dynamic" }]} onChange={(value) => updateRepeaterItem(index, { linkType: value })} />
+                        {entry.linkType === "dynamic" ? (
+                          <SelectControl label="Dynamic Link" value={String(entry.dynamicLink || "current-page")} options={[{ label: "Current Page", value: "current-page" }, { label: "Homepage", value: "homepage" }]} onChange={(value) => updateRepeaterItem(index, { dynamicLink: value })} />
+                        ) : (
+                          <TextControl label="Custom Link URL" value={String(entry.url || "")} onChange={(value) => updateRepeaterItem(index, { url: value })} placeholder="https://example.com or /page/" list="builder-link-targets" onFocus={() => void loadLinkSuggestions()} />
+                        )}
+                        {entry.linkType !== "dynamic" ? <SelectControl label="Open Link In" value={String(entry.linkTarget || "_self")} options={[{ label: "Same Window", value: "_self" }, { label: "New Window", value: "_blank" }]} onChange={(value) => updateRepeaterItem(index, { linkTarget: value })} /> : null}
+                      </div>
+                    </details>
                   ) : node.type === "price-list" ? (
                     <><TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} /><TextControl label="Price" value={String(entry.price || "")} onChange={(value) => updateRepeaterItem(index, { price: value })} /><TextControl label="Description" value={String(entry.description || "")} onChange={(value) => updateRepeaterItem(index, { description: value })} /></>
                   ) : (
@@ -5559,8 +6474,7 @@ export default function UniversalBuilder({ target }: Props) {
                 </div>
               ))}
               <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={addRepeaterItem}><Plus size={15} /> Add Item</button>
-              {node.type === "icon-list" ? <><TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 16)} onChange={(value) => updateProps("iconSize", Number(value))} /><TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateProps("iconColor", value)} /><UnitControl label="Item Spacing" value={String(node.props.itemSpacing || "12px")} onChange={(value) => updateProps("itemSpacing", value)} /><Field label="Show Dividers"><input type="checkbox" checked={Boolean(node.props.divider)} onChange={(event) => updateProps("divider", event.target.checked)} /></Field></> : null}
-              {node.type === "social-icons" ? <><TextControl label="Icon Size" type="number" value={String(node.props.iconSize || 22)} onChange={(value) => updateProps("iconSize", Number(value))} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateProps("buttonSize", Number(value))} /><SelectControl label="Shape" value={String(node.props.shape || "circle")} options={["circle", "rounded", "square"].map((value) => ({ label: value, value }))} onChange={(value) => updateProps("shape", value)} /></> : null}
+              {node.type === "social-icons" ? <><UnitControl label="Icon Size" value={String(deviceProps.iconSize || "22px")} onChange={(value) => updateResponsiveProp("iconSize", value)} allowAuto={false} /><UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} /><SelectControl label="Shape" value={String(deviceProps.shape || "circle")} options={["circle", "rounded", "square"].map((value) => ({ label: value, value }))} onChange={(value) => updateResponsiveProp("shape", value)} /></> : null}
             </ControlGroup>
           )}
 
@@ -5568,7 +6482,6 @@ export default function UniversalBuilder({ target }: Props) {
             <ControlGroup title="Query & Content" defaultOpen>
               <TextControl label="Post Type Slug (post = regular posts)" value={String(node.props.postType || "post")} onChange={(value) => updateProps("postType", value.trim())} />
               <TextControl label="Number of Posts per Tab / Grid" type="number" value={String(node.props.count || 6)} onChange={(value) => updateProps("count", Math.max(1, Math.min(24, Number(value) || 1)))} />
-              <TextControl label="Columns" type="number" value={String(node.props.columns || 3)} onChange={(value) => updateProps("columns", Math.max(1, Math.min(6, Number(value) || 1)))} />
               <SelectControl label="Order By" value={String(node.props.orderBy || "date")} options={[{ label: "Published Date", value: "date" }, { label: "Created Date", value: "created" }, { label: "Title", value: "title" }]} onChange={(value) => updateProps("orderBy", value)} />
               <SelectControl label="Order" value={String(node.props.order || "desc")} options={[{ label: "Newest / Descending", value: "desc" }, { label: "Oldest / Ascending", value: "asc" }]} onChange={(value) => updateProps("order", value)} />
               {node.type !== "post-tabs" ? <TextControl label="Category Slug" value={String(node.props.category || "")} onChange={(value) => updateProps("category", value)} /> : null}
@@ -5769,34 +6682,26 @@ export default function UniversalBuilder({ target }: Props) {
                       ) : null}
                     </Field>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <Field label="Background Color">
-                        <input
-                          type="color"
-                          value={String(slide.backgroundColor || "#0c2f55")}
-                          onChange={(event) => updateSlide(slideIndex, "backgroundColor", event.target.value)}
-                        />
-                      </Field>
-                      <Field label="Heading Color">
-                        <input
-                          type="color"
-                          value={String(slide.headingColor || "#ffffff")}
-                          onChange={(event) => updateSlide(slideIndex, "headingColor", event.target.value)}
-                        />
-                      </Field>
-                      <Field label="Text Color">
-                        <input
-                          type="color"
-                          value={String(slide.textColor || "#ffffff")}
-                          onChange={(event) => updateSlide(slideIndex, "textColor", event.target.value)}
-                        />
-                      </Field>
-                      <Field label="Overlay Color">
-                        <input
-                          type="color"
-                          value={String(slide.overlayColor || "#000000")}
-                          onChange={(event) => updateSlide(slideIndex, "overlayColor", event.target.value)}
-                        />
-                      </Field>
+                      <ColorControl
+                        label="Background Color"
+                        value={String(slide.backgroundColor || "#0c2f55")}
+                        onChange={(value) => updateSlide(slideIndex, "backgroundColor", value)}
+                      />
+                      <ColorControl
+                        label="Heading Color"
+                        value={String(slide.headingColor || "#ffffff")}
+                        onChange={(value) => updateSlide(slideIndex, "headingColor", value)}
+                      />
+                      <ColorControl
+                        label="Text Color"
+                        value={String(slide.textColor || "#ffffff")}
+                        onChange={(value) => updateSlide(slideIndex, "textColor", value)}
+                      />
+                      <ColorControl
+                        label="Overlay Color"
+                        value={String(slide.overlayColor || "#000000")}
+                        onChange={(value) => updateSlide(slideIndex, "overlayColor", value)}
+                      />
                     </div>
                     <TextControl
                       label="Overlay Opacity (0–1)"
@@ -5860,7 +6765,7 @@ export default function UniversalBuilder({ target }: Props) {
                               })
                             }
                           >
-                            {String(button.iconName || "Choose Icon")}
+                            {String(button.iconName || "No Icon — choose icon")}
                           </button>
                           <SelectControl
                             label="Link Type"
@@ -5920,41 +6825,32 @@ export default function UniversalBuilder({ target }: Props) {
                               )
                             }
                           />
-                          <TextControl
+                          <UnitControl
                             label="Custom Width"
-                            value={String(button.width || "")}
-                            placeholder="e.g. 240px or 60%"
+                            value={String(button.width || "240px")}
                             onChange={(value) => updateSlideButton(slideIndex, buttonIndex, "width", value)}
                           />
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                            <Field label="Button Color">
-                              <input
-                                type="color"
-                                value={String(button.backgroundColor || "#0c2f55")}
-                                onChange={(event) => updateSlideButton(slideIndex, buttonIndex, "backgroundColor", event.target.value)}
-                              />
-                            </Field>
-                            <Field label="Text Color">
-                              <input
-                                type="color"
-                                value={String(button.textColor || "#ffffff")}
-                                onChange={(event) => updateSlideButton(slideIndex, buttonIndex, "textColor", event.target.value)}
-                              />
-                            </Field>
-                            <Field label="Hover Button Color">
-                              <input
-                                type="color"
-                                value={String(button.hoverBackgroundColor || "#164a7e")}
-                                onChange={(event) => updateSlideButton(slideIndex, buttonIndex, "hoverBackgroundColor", event.target.value)}
-                              />
-                            </Field>
-                            <Field label="Hover Text Color">
-                              <input
-                                type="color"
-                                value={String(button.hoverTextColor || "#ffffff")}
-                                onChange={(event) => updateSlideButton(slideIndex, buttonIndex, "hoverTextColor", event.target.value)}
-                              />
-                            </Field>
+                            <ColorControl
+                              label="Button Color"
+                              value={String(button.backgroundColor || "#0c2f55")}
+                              onChange={(value) => updateSlideButton(slideIndex, buttonIndex, "backgroundColor", value)}
+                            />
+                            <ColorControl
+                              label="Text Color"
+                              value={String(button.textColor || "#ffffff")}
+                              onChange={(value) => updateSlideButton(slideIndex, buttonIndex, "textColor", value)}
+                            />
+                            <ColorControl
+                              label="Hover Button Color"
+                              value={String(button.hoverBackgroundColor || "#164a7e")}
+                              onChange={(value) => updateSlideButton(slideIndex, buttonIndex, "hoverBackgroundColor", value)}
+                            />
+                            <ColorControl
+                              label="Hover Text Color"
+                              value={String(button.hoverTextColor || "#ffffff")}
+                              onChange={(value) => updateSlideButton(slideIndex, buttonIndex, "hoverTextColor", value)}
+                            />
                           </div>
                           <Field label="Button Icon Image">
                             {button.iconImage ? (
@@ -6126,6 +7022,7 @@ export default function UniversalBuilder({ target }: Props) {
     if (!selectedNode) return null;
 
     const node = selectedNode;
+    const deviceProps = resolveBuilderProps(node.props, device);
     const selectedDisplay =
       getResponsiveValue(node.styles.display, device) ||
       (node.type === "grid" ? "grid" : "flex");
@@ -6137,9 +7034,9 @@ export default function UniversalBuilder({ target }: Props) {
             label="Display"
             value={String(selectedDisplay)}
             options={[
-              { label: "Flex", value: "flex" },
-              { label: "Grid", value: "grid" },
-              { label: "Block", value: "block" },
+              { label: "Flex", value: "flex", icon: "Rows3", title: "Flex" },
+              { label: "Grid", value: "grid", icon: "Grid3X3", title: "Grid" },
+              { label: "Block", value: "block", icon: "Square", title: "Block" },
             ]}
             onChange={(value) => updateResponsiveStyle("display", value)}
           />
@@ -6151,10 +7048,10 @@ export default function UniversalBuilder({ target }: Props) {
                 (node.type === "row" ? "row" : "column"),
             )}
             options={[
-              { label: "→", value: "row", title: "Row" },
-              { label: "↓", value: "column", title: "Column" },
-              { label: "←", value: "row-reverse", title: "Row Reverse" },
-              { label: "↑", value: "column-reverse", title: "Column Reverse" },
+              { label: "", value: "row", title: "Row", icon: "ArrowRight" },
+              { label: "", value: "column", title: "Column", icon: "ArrowDown" },
+              { label: "", value: "row-reverse", title: "Row Reverse", icon: "ArrowLeft" },
+              { label: "", value: "column-reverse", title: "Column Reverse", icon: "ArrowUp" },
             ]}
             onChange={(value) => updateResponsiveStyle("direction", value)}
           />
@@ -6166,12 +7063,12 @@ export default function UniversalBuilder({ target }: Props) {
                 "flex-start",
             )}
             options={[
-              { label: "Start", value: "flex-start" },
-              { label: "Center", value: "center" },
-              { label: "End", value: "flex-end" },
-              { label: "Between", value: "space-between" },
-              { label: "Around", value: "space-around" },
-              { label: "Evenly", value: "space-evenly" },
+              { label: "", value: "flex-start", title: "Start", icon: "AlignHorizontalJustifyStart" },
+              { label: "", value: "center", title: "Center", icon: "AlignHorizontalJustifyCenter" },
+              { label: "", value: "flex-end", title: "End", icon: "AlignHorizontalJustifyEnd" },
+              { label: "", value: "space-between", title: "Space Between", icon: "AlignHorizontalSpaceBetween" },
+              { label: "", value: "space-around", title: "Space Around", icon: "AlignHorizontalSpaceAround" },
+              { label: "", value: "space-evenly", title: "Space Evenly", icon: "AlignHorizontalDistributeCenter" },
             ]}
             onChange={(value) => updateResponsiveStyle("justifyContent", value)}
           />
@@ -6182,13 +7079,30 @@ export default function UniversalBuilder({ target }: Props) {
               getResponsiveValue(node.styles.alignItems, device) || "stretch",
             )}
             options={[
-              { label: "Start", value: "flex-start" },
-              { label: "Center", value: "center" },
-              { label: "End", value: "flex-end" },
-              { label: "Stretch", value: "stretch" },
-              { label: "Base", value: "baseline" },
+              { label: "", value: "flex-start", title: "Start", icon: "AlignVerticalJustifyStart" },
+              { label: "", value: "center", title: "Center", icon: "AlignVerticalJustifyCenter" },
+              { label: "", value: "flex-end", title: "End", icon: "AlignVerticalJustifyEnd" },
+              { label: "", value: "stretch", title: "Stretch", icon: "StretchVertical" },
+              { label: "", value: "baseline", title: "Baseline", icon: "Baseline" },
             ]}
             onChange={(value) => updateResponsiveStyle("alignItems", value)}
+          />
+
+          <SegmentedControl
+            label="Align Content"
+            value={String(
+              getResponsiveValue(node.styles.alignContent, device) || "stretch",
+            )}
+            options={[
+              { label: "", value: "flex-start", title: "Start", icon: "AlignVerticalJustifyStart" },
+              { label: "", value: "center", title: "Center", icon: "AlignVerticalJustifyCenter" },
+              { label: "", value: "flex-end", title: "End", icon: "AlignVerticalJustifyEnd" },
+              { label: "", value: "space-between", title: "Space Between", icon: "AlignVerticalSpaceBetween" },
+              { label: "", value: "space-around", title: "Space Around", icon: "AlignVerticalSpaceAround" },
+              { label: "", value: "space-evenly", title: "Space Evenly", icon: "AlignVerticalDistributeCenter" },
+              { label: "", value: "stretch", title: "Stretch", icon: "StretchVertical" },
+            ]}
+            onChange={(value) => updateResponsiveStyle("alignContent", value)}
           />
 
           <SegmentedControl
@@ -6197,9 +7111,9 @@ export default function UniversalBuilder({ target }: Props) {
               getResponsiveValue(node.styles.flexWrap, device) || "nowrap",
             )}
             options={[
-              { label: "No Wrap", value: "nowrap" },
-              { label: "Wrap", value: "wrap" },
-              { label: "Reverse", value: "wrap-reverse" },
+              { label: "", value: "nowrap", title: "No Wrap", icon: "ArrowRight" },
+              { label: "", value: "wrap", title: "Wrap", icon: "WrapText" },
+              { label: "", value: "wrap-reverse", title: "Wrap Reverse", icon: "ArrowDownUp" },
             ]}
             onChange={(value) => updateResponsiveStyle("flexWrap", value)}
           />
@@ -6208,9 +7122,11 @@ export default function UniversalBuilder({ target }: Props) {
         <ControlGroup title="Size">
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              width: "100%",
+              minWidth: 0,
             }}
           >
             <UnitControl
@@ -6266,19 +7182,14 @@ export default function UniversalBuilder({ target }: Props) {
         </ControlGroup>
 
         <ControlGroup title="Items Gap">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-            }}
-          >
+          <div className={styles.inspectorControlStack}>
             <UnitControl
               label="Row Gap"
               value={String(
                 getResponsiveValue(node.styles.rowGap, device) || "",
               )}
               onChange={(value) => updateResponsiveStyle("rowGap", value)}
+              allowAuto={false}
             />
 
             <UnitControl
@@ -6287,24 +7198,20 @@ export default function UniversalBuilder({ target }: Props) {
                 getResponsiveValue(node.styles.columnGap, device) || "",
               )}
               onChange={(value) => updateResponsiveStyle("columnGap", value)}
+              allowAuto={false}
+            />
+
+            <UnitControl
+              label="Gap"
+              value={String(getResponsiveValue(node.styles.gap, device) || "")}
+              onChange={(value) => updateResponsiveStyle("gap", value)}
+              allowAuto={false}
             />
           </div>
-
-          <UnitControl
-            label="Gap"
-            value={String(getResponsiveValue(node.styles.gap, device) || "")}
-            onChange={(value) => updateResponsiveStyle("gap", value)}
-          />
         </ControlGroup>
 
         <ControlGroup title="Flex Child">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-            }}
-          >
+          <div className={styles.inspectorControlStack}>
             <TextControl
               label="Grow"
               value={String(
@@ -6321,7 +7228,7 @@ export default function UniversalBuilder({ target }: Props) {
               onChange={(value) => updateResponsiveStyle("flexShrink", value)}
             />
 
-            <TextControl
+            <UnitControl
               label="Basis"
               value={String(
                 getResponsiveValue(node.styles.flexBasis, device) || "",
@@ -6336,48 +7243,43 @@ export default function UniversalBuilder({ target }: Props) {
               )}
               onChange={(value) => updateResponsiveStyle("order", value)}
             />
-          </div>
 
-          <SelectControl
-            label="Align Self"
-            value={String(
-              getResponsiveValue(node.styles.alignSelf, device) || "auto",
-            )}
-            options={[
-              "auto",
-              "flex-start",
-              "center",
-              "flex-end",
-              "stretch",
-              "baseline",
-            ].map((value) => ({
-              label: value,
-              value,
-            }))}
-            onChange={(value) => updateResponsiveStyle("alignSelf", value)}
-          />
-          <SelectControl
-            label="Size"
-            value={
-              Number(getResponsiveValue(node.styles.flexGrow, device)) > 0
-                ? "grow"
-                : Number(getResponsiveValue(node.styles.flexShrink, device)) > 0
-                  ? "shrink"
-                  : "default"
-            }
-            options={[
-              { label: "Default", value: "default" },
-              { label: "Grow", value: "grow" },
-              { label: "Shrink", value: "shrink" },
-              { label: "Grow and Shrink", value: "both" },
-            ]}
-            onChange={(value) => {
-              updateResponsiveStyles([
-                ["flexGrow", value === "grow" || value === "both" ? "1" : "0"],
-                ["flexShrink", value === "shrink" || value === "both" ? "1" : "0"],
-              ]);
-            }}
-          />
+            <SegmentedControl
+              label="Align Self"
+              value={String(getResponsiveValue(node.styles.alignSelf, device) || "auto")}
+              options={[
+                { label: "", value: "auto", title: "Auto", icon: "CircleDot" },
+                { label: "", value: "flex-start", title: "Start", icon: "AlignStartVertical" },
+                { label: "", value: "center", title: "Center", icon: "AlignCenterVertical" },
+                { label: "", value: "flex-end", title: "End", icon: "AlignEndVertical" },
+                { label: "", value: "stretch", title: "Stretch", icon: "StretchVertical" },
+                { label: "", value: "baseline", title: "Baseline", icon: "Baseline" },
+              ]}
+              onChange={(value) => updateResponsiveStyle("alignSelf", value)}
+            />
+            <SelectControl
+              label="Size"
+              value={
+                Number(getResponsiveValue(node.styles.flexGrow, device)) > 0
+                  ? "grow"
+                  : Number(getResponsiveValue(node.styles.flexShrink, device)) > 0
+                    ? "shrink"
+                    : "default"
+              }
+              options={[
+                { label: "Default", value: "default" },
+                { label: "Grow", value: "grow" },
+                { label: "Shrink", value: "shrink" },
+                { label: "Grow and Shrink", value: "both" },
+              ]}
+              onChange={(value) => {
+                updateResponsiveStyles([
+                  ["flexGrow", value === "grow" || value === "both" ? "1" : "0"],
+                  ["flexShrink", value === "shrink" || value === "both" ? "1" : "0"],
+                ]);
+              }}
+            />
+          </div>
         </ControlGroup>
 
         {node.type === "grid" && (
@@ -6423,7 +7325,7 @@ export default function UniversalBuilder({ target }: Props) {
         <ControlGroup title="Content Width">
           <SelectControl
             label="Width Mode"
-            value={String(node.props.contentWidth || "boxed")}
+            value={String(deviceProps.contentWidth || "boxed")}
             options={[
               { label: "Boxed", value: "boxed" },
               { label: "Full Width", value: "full" },
@@ -6435,7 +7337,7 @@ export default function UniversalBuilder({ target }: Props) {
           <UnitControl
             label="Container Width"
             value={String(
-              node.props.containerWidth || settings.containerWidth || "1200px",
+              deviceProps.containerWidth || settings.containerWidth || "1200px",
             )}
             onChange={(value) => updateResponsiveProp("containerWidth", value)}
           />
@@ -6458,6 +7360,7 @@ export default function UniversalBuilder({ target }: Props) {
     if (!selectedNode) return null;
 
     const node = selectedNode;
+    const deviceProps = resolveBuilderProps(node.props, device);
     const background =
       backgroundState === "hover"
         ? node.styles.backgroundHover || {}
@@ -6491,8 +7394,8 @@ export default function UniversalBuilder({ target }: Props) {
       textColorState === "hover" ? node.styles.colorHover : node.styles.color,
       device,
     );
-    const menuStyles = node.props.menuItemStyles && typeof node.props.menuItemStyles === "object"
-      ? node.props.menuItemStyles as Record<string, Record<string, Record<string, string>>>
+    const menuStyles = deviceProps.menuItemStyles && typeof deviceProps.menuItemStyles === "object"
+      ? deviceProps.menuItemStyles as Record<string, Record<string, Record<string, unknown>>>
       : {};
     const rawMenuDevice = menuStyles[device] || {};
     const desktopMenuDevice = menuStyles.desktop || {};
@@ -6504,9 +7407,9 @@ export default function UniversalBuilder({ target }: Props) {
           ...(rawMenuDevice[state] || {}),
         },
       ]),
-    ) as Record<string, Record<string, string>>;
+    ) as Record<string, Record<string, unknown>>;
     const activeMenuItemStyle = menuDevice[menuItemState] || {};
-    const updateMenuItemStyle = (key: "color" | "backgroundColor", value: string) => {
+    const updateMenuItemStyle = (key: "color" | "backgroundColor" | "iconColor" | "backgroundGradient", value: unknown) => {
       const next = {
         ...menuStyles,
         [device]: {
@@ -6531,11 +7434,11 @@ export default function UniversalBuilder({ target }: Props) {
           <ControlGroup title="Image" defaultOpen>
             <SegmentedControl
               label="Alignment"
-              value={String(node.props.alignment || "left")}
+              value={String(deviceProps.alignment || "left")}
               options={[
-                { label: "Left", value: "left" },
-                { label: "Center", value: "center" },
-                { label: "Right", value: "right" },
+                { label: "", value: "left", title: "Left", icon: "AlignLeft" },
+                { label: "", value: "center", title: "Center", icon: "AlignCenter" },
+                { label: "", value: "right", title: "Right", icon: "AlignRight" },
               ]}
               onChange={(value) => updateResponsiveProp("alignment", value)}
             />
@@ -6556,7 +7459,7 @@ export default function UniversalBuilder({ target }: Props) {
             />
             <SelectControl
               label="Object Fit"
-              value={String(node.props.objectFit || "cover")}
+              value={String(deviceProps.objectFit || "cover")}
               options={["cover", "contain", "fill", "none"].map((value) => ({
                 label: value,
                 value,
@@ -6565,7 +7468,7 @@ export default function UniversalBuilder({ target }: Props) {
             />
             <SelectControl
               label="Object Position"
-              value={String(node.props.objectPosition || "center center")}
+              value={String(deviceProps.objectPosition || "center center")}
               options={[
                 "center center",
                 "left top",
@@ -6641,46 +7544,117 @@ export default function UniversalBuilder({ target }: Props) {
     return (
       <>
         {node.type === "menu" ? (
-          <ControlGroup title="Navigation Menu Item Colors" defaultOpen>
-            <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px" }}>Choose Desktop, Tablet or Mobile from the builder toolbar, then set each menu item state.</p>
-            <SegmentedControl
-              label="Item State"
-              value={menuItemState}
-              options={[{ label: "Normal", value: "normal" }, { label: "Hover", value: "hover" }, { label: "Active", value: "active" }]}
-              onChange={(value) => setMenuItemState(value as "normal" | "hover" | "active")}
-            />
-            <Field label={`${device[0].toUpperCase()}${device.slice(1)} Text Color — ${menuItemState}`}>
-              <input type="color" value={/^#[\da-f]{6}$/i.test(activeMenuItemStyle.color || "") ? activeMenuItemStyle.color : "#1f2937"} onChange={(event) => updateMenuItemStyle("color", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
-            </Field>
-            <Field label={`${device[0].toUpperCase()}${device.slice(1)} Background Color — ${menuItemState}`}>
-              <input type="color" value={/^#[\da-f]{6}$/i.test(activeMenuItemStyle.backgroundColor || "") ? activeMenuItemStyle.backgroundColor : "#ffffff"} onChange={(event) => updateMenuItemStyle("backgroundColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
-            </Field>
-            <Field label="Mobile Menu Panel Background">
-              <input type="color" value={String(node.props.mobilePanelBackground || "#ffffff")} onChange={(event) => updateResponsiveProp("mobilePanelBackground", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
-            </Field>
-            <Field label="Mobile Menu Panel Text Color">
-              <input type="color" value={String(node.props.mobilePanelColor || "#1f2937")} onChange={(event) => updateResponsiveProp("mobilePanelColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
-            </Field>
-            <Field label="Mobile Toggle Icon Color">
-              <input type="color" value={String(node.props.iconColor || "#0c2f55")} onChange={(event) => updateResponsiveProp("iconColor", event.target.value)} style={{ ...CONTROL_STYLE, height: 38, padding: 3 }} />
-            </Field>
+          <>
+            <ControlGroup title="Navigation Menu Item Colors" defaultOpen>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px", lineHeight: 1.5 }}>
+                Select Desktop, Tablet or Mobile in the Builder toolbar. Normal, Hover and Active styles are stored independently for the selected device.
+              </p>
+              <SegmentedControl
+                label="Item State"
+                value={menuItemState}
+                options={[{ label: "Normal", value: "normal" }, { label: "Hover", value: "hover" }, { label: "Active", value: "active" }]}
+                onChange={(value) => setMenuItemState(value as "normal" | "hover" | "active")}
+              />
+              <ColorControl label="Text Color" value={String(activeMenuItemStyle.color || "#1f2937")} onChange={(value) => updateMenuItemStyle("color", value)} />
+              <ColorControl label="Icon Color" value={String(activeMenuItemStyle.iconColor || activeMenuItemStyle.color || "#1f2937")} onChange={(value) => updateMenuItemStyle("iconColor", value)} />
+              <SelectControl
+                label="Background Type"
+                value={activeMenuItemStyle.backgroundGradient ? "gradient" : "classic"}
+                options={[{ label: "Classic", value: "classic" }, { label: "Gradient", value: "gradient" }]}
+                onChange={(value) => {
+                  if (value === "classic") {
+                    updateMenuItemStyle("backgroundGradient", null);
+                  } else {
+                    updateMenuItemStyle("backgroundGradient", { angle: 135, color1: "#ffffff", color2: "#eaf1fb" });
+                  }
+                }}
+              />
+              {activeMenuItemStyle.backgroundGradient && typeof activeMenuItemStyle.backgroundGradient === "object" ? (() => {
+                const gradient = activeMenuItemStyle.backgroundGradient as { angle?: number; color1?: string; color2?: string };
+                return (
+                  <>
+                    <ColorControl label="Gradient Color 1" value={String(gradient.color1 || "#ffffff")} onChange={(value) => updateMenuItemStyle("backgroundGradient", { ...gradient, color1: value })} />
+                    <ColorControl label="Gradient Color 2" value={String(gradient.color2 || "#eaf1fb")} onChange={(value) => updateMenuItemStyle("backgroundGradient", { ...gradient, color2: value })} />
+                    <TextControl label="Gradient Angle" type="number" value={String(gradient.angle ?? 135)} onChange={(value) => updateMenuItemStyle("backgroundGradient", { ...gradient, angle: Math.max(0, Math.min(360, Number(value) || 0)) })} />
+                  </>
+                );
+              })() : (
+                <ColorControl label="Background Color" value={String(activeMenuItemStyle.backgroundColor || "transparent")} onChange={(value) => updateMenuItemStyle("backgroundColor", value)} />
+              )}
+            </ControlGroup>
+
+            <ControlGroup title="Mobile Menu Panel" defaultOpen>
+              <SelectControl
+                label="Panel Background Type"
+                value={String(deviceProps.mobilePanelBackgroundType || (deviceProps.mobilePanelGradient ? "gradient" : "classic"))}
+                options={[{ label: "Classic", value: "classic" }, { label: "Gradient", value: "gradient" }]}
+                onChange={(value) => {
+                  updateResponsiveProps(value === "gradient"
+                    ? {
+                        mobilePanelBackgroundType: "gradient",
+                        mobilePanelGradient: deviceProps.mobilePanelGradient && typeof deviceProps.mobilePanelGradient === "object"
+                          ? deviceProps.mobilePanelGradient
+                          : { angle: 135, color1: "#ffffff", color2: "#eaf1fb" },
+                      }
+                    : { mobilePanelBackgroundType: "classic" });
+                }}
+              />
+              {deviceProps.mobilePanelBackgroundType === "gradient" || (!deviceProps.mobilePanelBackgroundType && deviceProps.mobilePanelGradient) ? (() => {
+                const gradient = deviceProps.mobilePanelGradient && typeof deviceProps.mobilePanelGradient === "object"
+                  ? deviceProps.mobilePanelGradient as { angle?: number; color1?: string; color2?: string }
+                  : { angle: 135, color1: "#ffffff", color2: "#eaf1fb" };
+                return (
+                  <>
+                    <ColorControl label="Panel Gradient Color 1" value={String(gradient.color1 || "#ffffff")} onChange={(value) => updateResponsiveProp("mobilePanelGradient", { ...gradient, color1: value })} />
+                    <ColorControl label="Panel Gradient Color 2" value={String(gradient.color2 || "#eaf1fb")} onChange={(value) => updateResponsiveProp("mobilePanelGradient", { ...gradient, color2: value })} />
+                    <TextControl label="Panel Gradient Angle" type="number" value={String(gradient.angle ?? 135)} onChange={(value) => updateResponsiveProp("mobilePanelGradient", { ...gradient, angle: Math.max(0, Math.min(360, Number(value) || 0)) })} />
+                  </>
+                );
+              })() : (
+                <ColorControl label="Panel Background Color" value={String(deviceProps.mobilePanelBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("mobilePanelBackground", value)} />
+              )}
+              <ColorControl label="Panel Text Color" value={String(deviceProps.mobilePanelColor || "#1f2937")} onChange={(value) => updateResponsiveProp("mobilePanelColor", value)} />
+              <ColorControl label="Panel Icon Color" value={String(deviceProps.mobilePanelIconColor || deviceProps.mobilePanelColor || "#1f2937")} onChange={(value) => updateResponsiveProp("mobilePanelIconColor", value)} />
+              <ColorControl label="Backdrop / Overlay Color" value={String(deviceProps.mobileOverlayColor || "rgba(15, 23, 42, 0.48)")} onChange={(value) => updateResponsiveProp("mobileOverlayColor", value)} />
+            </ControlGroup>
+
+            <ControlGroup title="Mobile Menu Toggle & Icons">
+              <ColorControl label="Toggle Icon — Normal" value={String(deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+              <ColorControl label="Toggle Icon — Hover" value={String(deviceProps.toggleHoverIconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("toggleHoverIconColor", value)} />
+              <ColorControl label="Toggle Background — Normal" value={String(deviceProps.toggleBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleBackgroundColor", value)} />
+              <ColorControl label="Toggle Background — Hover" value={String(deviceProps.toggleHoverBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleHoverBackgroundColor", value)} />
+              <ColorControl label="Close Icon — Normal" value={String(deviceProps.closeIconColor || deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("closeIconColor", value)} />
+              <ColorControl label="Close Icon — Hover" value={String(deviceProps.closeIconHoverColor || "#3984e8")} onChange={(value) => updateResponsiveProp("closeIconHoverColor", value)} />
+            </ControlGroup>
+          </>
+        ) : null}
+        {(node.type === "icon" || node.type === "icon-box" || node.type === "social-icons") ? (
+          <ControlGroup title="Icon Styling" defaultOpen>
+            <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+            <UnitControl label="Icon Size" value={String(deviceProps.iconSize || deviceProps.size || "24px")} onChange={(value) => updateResponsiveProp(node.type === "icon" ? "size" : "iconSize", value)} allowAuto={false} />
+            {node.type === "social-icons" ? <><ColorControl label="Icon Background" value={String(deviceProps.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} /><UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} /></> : null}
           </ControlGroup>
         ) : null}
-        {(node.type === "icon" || node.type === "icon-box" || node.type === "icon-list" || node.type === "social-icons") ? (
-          <ControlGroup title="Icon Styling" defaultOpen>
-            <TextControl label="Icon Color" value={String(node.props.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
-            <TextControl label="Icon Size" type="number" value={String(node.props.iconSize || node.props.size || 24)} onChange={(value) => updateResponsiveProp(node.type === "icon" ? "size" : "iconSize", Number(value))} />
-            {node.type === "social-icons" ? <><TextControl label="Icon Background" value={String(node.props.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} /><TextControl label="Button Size" type="number" value={String(node.props.buttonSize || 40)} onChange={(value) => updateResponsiveProp("buttonSize", Number(value))} /></> : null}
+        {node.type === "icon-list" ? (
+          <ControlGroup title="Icon List Styling" defaultOpen>
+            <UnitControl label="Icon Size" value={String(deviceProps.iconSize || "16px")} onChange={(value) => updateResponsiveProp("iconSize", value)} allowAuto={false} />
+            <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+            <ColorControl label="Text Color" value={String(deviceProps.textColor || "#334155")} onChange={(value) => updateResponsiveProp("textColor", value)} />
+            <ColorControl label="Link Color" value={String(deviceProps.linkColor || "#334155")} onChange={(value) => updateResponsiveProp("linkColor", value)} />
+            <UnitControl label="Icon / Text Gap" value={String(deviceProps.iconGap || "9px")} onChange={(value) => updateResponsiveProp("iconGap", value)} allowAuto={false} />
+            <UnitControl label="Item Spacing" value={String(deviceProps.itemSpacing || "12px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} allowAuto={false} />
+            <ColorControl label="Divider Color" value={String(deviceProps.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
+            <Field label="Show Dividers"><input type="checkbox" checked={Boolean(deviceProps.divider)} onChange={(event) => updateResponsiveProp("divider", event.target.checked)} /></Field>
           </ControlGroup>
         ) : null}
         {(node.type === "tabs" || node.type === "post-tabs") ? (
           <ControlGroup title="Tabs Styling" defaultOpen>
-            <TextControl label="Normal Text Color" value={String(node.props.tabNormalColor || "#334155")} onChange={(value) => updateResponsiveProp("tabNormalColor", value)} />
-            <TextControl label="Normal Background" value={String(node.props.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateResponsiveProp("tabNormalBackground", value)} />
-            <TextControl label="Hover Text Color" value={String(node.props.tabHoverColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabHoverColor", value)} />
-            <TextControl label="Hover Background" value={String(node.props.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateResponsiveProp("tabHoverBackground", value)} />
-            <TextControl label="Active Text Color" value={String(node.props.tabActiveColor || "#ffffff")} onChange={(value) => updateResponsiveProp("tabActiveColor", value)} />
-            <TextControl label="Active Background" value={String(node.props.tabActiveBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabActiveBackground", value)} />
+            <ColorControl label="Normal Text Color" value={String(deviceProps.tabNormalColor || "#334155")} onChange={(value) => updateResponsiveProp("tabNormalColor", value)} />
+            <ColorControl label="Normal Background" value={String(deviceProps.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateResponsiveProp("tabNormalBackground", value)} />
+            <ColorControl label="Hover Text Color" value={String(deviceProps.tabHoverColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabHoverColor", value)} />
+            <ColorControl label="Hover Background" value={String(deviceProps.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateResponsiveProp("tabHoverBackground", value)} />
+            <ColorControl label="Active Text Color" value={String(deviceProps.tabActiveColor || "#ffffff")} onChange={(value) => updateResponsiveProp("tabActiveColor", value)} />
+            <ColorControl label="Active Background" value={String(deviceProps.tabActiveBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabActiveBackground", value)} />
           </ControlGroup>
         ) : null}
         {(node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel" || node.type === "post-tabs") ? (
@@ -6688,44 +7662,44 @@ export default function UniversalBuilder({ target }: Props) {
             <TextControl
               label="Columns on this device"
               type="number"
-              value={String(node.props.columns || (node.type === "post-tabs" ? 2 : 3))}
+              value={String(deviceProps.columns || (node.type === "post-tabs" ? 2 : 3))}
               onChange={(value) => updateResponsiveProp("columns", Math.max(1, Math.min(6, Number(value) || 1)))}
             />
-            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
-            <TextControl label="Card Border Color" value={String(node.props.cardBorderColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
-            <UnitControl label="Card Border Radius" value={String(node.props.cardRadius || "8px")} onChange={(value) => updateResponsiveProp("cardRadius", value)} />
-            <UnitControl label="Grid / Card Gap" value={String(node.props.gap || "18px")} onChange={(value) => updateResponsiveProp("gap", value)} />
-            <UnitControl label="Image Height" value={String(node.props.imageHeight || "180px")} onChange={(value) => updateResponsiveProp("imageHeight", value)} />
+            <ColorControl label="Card Background" value={String(deviceProps.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
+            <ColorControl label="Card Border Color" value={String(deviceProps.cardBorderColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
+            <UnitControl label="Card Border Radius" value={String(deviceProps.cardRadius || "8px")} onChange={(value) => updateResponsiveProp("cardRadius", value)} allowAuto={false} />
+            <UnitControl label="Grid / Card Gap" value={String(deviceProps.gap || "18px")} onChange={(value) => updateResponsiveProp("gap", value)} allowAuto={false} />
+            <UnitControl label="Image Height" value={String(deviceProps.imageHeight || "180px")} onChange={(value) => updateResponsiveProp("imageHeight", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "price-table" ? (
           <ControlGroup title="Pricing Card Styling" defaultOpen>
-            <TextControl label="Card Background" value={String(node.props.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
-            <TextControl label="Card Border" value={String(node.props.cardBorderColor || "#dbe3ed")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
-            <TextControl label="Title Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
-            <TextControl label="Price Color" value={String(node.props.priceColor || "#3984e8")} onChange={(value) => updateResponsiveProp("priceColor", value)} />
-            <TextControl label="Button Background" value={String(node.props.buttonBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("buttonBackground", value)} />
-            <TextControl label="Button Text Color" value={String(node.props.buttonColor || "#ffffff")} onChange={(value) => updateResponsiveProp("buttonColor", value)} />
+            <ColorControl label="Card Background" value={String(deviceProps.cardBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("cardBackground", value)} />
+            <ColorControl label="Card Border" value={String(deviceProps.cardBorderColor || "#dbe3ed")} onChange={(value) => updateResponsiveProp("cardBorderColor", value)} />
+            <ColorControl label="Title Color" value={String(deviceProps.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
+            <ColorControl label="Price Color" value={String(deviceProps.priceColor || "#3984e8")} onChange={(value) => updateResponsiveProp("priceColor", value)} />
+            <ColorControl label="Button Background" value={String(deviceProps.buttonBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("buttonBackground", value)} />
+            <ColorControl label="Button Text Color" value={String(deviceProps.buttonColor || "#ffffff")} onChange={(value) => updateResponsiveProp("buttonColor", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "accordion" ? (
           <ControlGroup title="Accordion Styling" defaultOpen>
-            <TextControl label="Title Text Color" value={String(node.props.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
-            <TextControl label="Title Background" value={String(node.props.titleBackground || "#f8fafc")} onChange={(value) => updateResponsiveProp("titleBackground", value)} />
-            <TextControl label="Content Text Color" value={String(node.props.contentColor || "#334155")} onChange={(value) => updateResponsiveProp("contentColor", value)} />
-            <TextControl label="Content Background" value={String(node.props.contentBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("contentBackground", value)} />
-            <TextControl label="Divider Color" value={String(node.props.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
+            <ColorControl label="Title Text Color" value={String(deviceProps.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
+            <ColorControl label="Title Background" value={String(deviceProps.titleBackground || "#f8fafc")} onChange={(value) => updateResponsiveProp("titleBackground", value)} />
+            <ColorControl label="Content Text Color" value={String(deviceProps.contentColor || "#334155")} onChange={(value) => updateResponsiveProp("contentColor", value)} />
+            <ColorControl label="Content Background" value={String(deviceProps.contentBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("contentBackground", value)} />
+            <ColorControl label="Divider Color" value={String(deviceProps.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "countdown" ? (
           <ControlGroup title="Countdown Styling" defaultOpen>
-            <TextControl label="Number Color" value={String(node.props.numberColor || "#ffffff")} onChange={(value) => updateResponsiveProp("numberColor", value)} />
-            <TextControl label="Label Color" value={String(node.props.labelColor || "#ffffff")} onChange={(value) => updateResponsiveProp("labelColor", value)} />
-            <TextControl label="Box Background" value={String(node.props.boxBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("boxBackground", value)} />
-            <UnitControl label="Box Radius" value={String(node.props.boxRadius || "8px")} onChange={(value) => updateResponsiveProp("boxRadius", value)} />
+            <ColorControl label="Number Color" value={String(deviceProps.numberColor || "#ffffff")} onChange={(value) => updateResponsiveProp("numberColor", value)} />
+            <ColorControl label="Label Color" value={String(deviceProps.labelColor || "#ffffff")} onChange={(value) => updateResponsiveProp("labelColor", value)} />
+            <ColorControl label="Box Background" value={String(deviceProps.boxBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("boxBackground", value)} />
+            <UnitControl label="Box Radius" value={String(deviceProps.boxRadius || "8px")} onChange={(value) => updateResponsiveProp("boxRadius", value)} allowAuto={false} />
           </ControlGroup>
         ) : null}
-        <ControlGroup title="Text Color" defaultOpen>
+        <ControlGroup title={node.type === "heading" ? "Heading Text Color" : "Text Color"} defaultOpen>
           <SegmentedControl
             label="State"
             value={textColorState}
@@ -6735,23 +7709,11 @@ export default function UniversalBuilder({ target }: Props) {
             ]}
             onChange={(value) => setTextColorState(value as "normal" | "hover")}
           />
-          <Field label="Text Color">
-            <input
-              type="color"
-              value={
-                typeof currentTextColor === "string" &&
-                /^#[\da-f]{6}$/i.test(currentTextColor)
-                  ? currentTextColor
-                  : "#334155"
-              }
-              onChange={(event) =>
-                updateResponsiveStyle(
-                  textColorState === "hover" ? "colorHover" : "color",
-                  event.target.value,
-                )
-              }
-            />
-          </Field>
+          <ColorControl
+            label="Text Color"
+            value={String(currentTextColor || "#334155")}
+            onChange={(value) => updateResponsiveStyle(textColorState === "hover" ? "colorHover" : "color", value)}
+          />
         </ControlGroup>
 
         <ControlGroup title="Background">
@@ -6778,25 +7740,11 @@ export default function UniversalBuilder({ target }: Props) {
             }
           />
 
-          <Field label="Background Color">
-            <input
-              type="color"
-              value={
-                getResponsiveScalar(background.color, device) &&
-                getResponsiveScalar(background.color, device) !== "transparent"
-                  ? String(getResponsiveScalar(background.color, device))
-                  : "#ffffff"
-              }
-              onChange={(event) =>
-                updateCurrentBackground("color", event.target.value)
-              }
-              style={{
-                ...CONTROL_STYLE,
-                height: 38,
-                padding: 3,
-              }}
-            />
-          </Field>
+          <ColorControl
+            label="Background Color"
+            value={String(getResponsiveScalar(background.color, device) || "transparent")}
+            onChange={(value) => updateCurrentBackground("color", value)}
+          />
 
           {background.type === "gradient" && (
             <>
@@ -6807,31 +7755,17 @@ export default function UniversalBuilder({ target }: Props) {
                   gap: 10,
                 }}
               >
-                <Field label="Color 1">
-                  <input
-                    type="color"
-                    value={gradient.color1 || "#3984e8"}
-                    onChange={(event) =>
-                      updateCurrentBackground("gradient", {
-                        ...gradient,
-                        color1: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
+                <ColorControl
+                  label="Color 1"
+                  value={String(gradient.color1 || "#3984e8")}
+                  onChange={(value) => updateCurrentBackground("gradient", { ...gradient, color1: value })}
+                />
 
-                <Field label="Color 2">
-                  <input
-                    type="color"
-                    value={gradient.color2 || "#0c2f55"}
-                    onChange={(event) =>
-                      updateCurrentBackground("gradient", {
-                        ...gradient,
-                        color2: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
+                <ColorControl
+                  label="Color 2"
+                  value={String(gradient.color2 || "#0c2f55")}
+                  onChange={(value) => updateCurrentBackground("gradient", { ...gradient, color2: value })}
+                />
               </div>
 
               <SelectControl
@@ -7052,6 +7986,7 @@ export default function UniversalBuilder({ target }: Props) {
                 "",
             )}
             onChange={(value) => updateTypography("fontSize", value, true)}
+            allowAuto={false}
           />
 
           <SelectControl
@@ -7074,22 +8009,26 @@ export default function UniversalBuilder({ target }: Props) {
             onChange={(value) => updateTypography("fontWeight", value)}
           />
 
-          <TextControl
+          <UnitControl
             label="Line Height"
             value={String(node.styles.typography?.lineHeight || "")}
             onChange={(value) => updateTypography("lineHeight", value)}
+            allowAuto={false}
+            allowUnitless
           />
 
-          <TextControl
+          <UnitControl
             label="Letter Spacing"
             value={String(node.styles.typography?.letterSpacing || "")}
             onChange={(value) => updateTypography("letterSpacing", value)}
+            allowAuto={false}
           />
 
-          <TextControl
+          <UnitControl
             label="Word Spacing"
             value={String(node.styles.typography?.wordSpacing || "")}
             onChange={(value) => updateTypography("wordSpacing", value)}
+            allowAuto={false}
           />
 
           <SelectControl
@@ -7133,10 +8072,10 @@ export default function UniversalBuilder({ target }: Props) {
                 "left",
             )}
             options={[
-              { label: "Left", value: "left" },
-              { label: "Center", value: "center" },
-              { label: "Right", value: "right" },
-              { label: "Justify", value: "justify" },
+              { label: "", value: "left", title: "Left", icon: "AlignLeft" },
+              { label: "", value: "center", title: "Center", icon: "AlignCenter" },
+              { label: "", value: "right", title: "Right", icon: "AlignRight" },
+              { label: "", value: "justify", title: "Justify", icon: "AlignJustify" },
             ]}
             onChange={(value) => updateTypography("textAlign", value, true)}
           />
@@ -7200,29 +8139,21 @@ export default function UniversalBuilder({ target }: Props) {
             }
           />
 
-          <TextControl
+          <UnitControl
             label="Border Width"
             value={String(border.width || "1px")}
             onChange={(value) => updateBorder("width", value, borderState === "hover")}
+            allowAuto={false}
           />
 
-          <Field label="Border Color">
-            <input
-              type="color"
-              value={getResponsiveScalar(border.color, device) || "#dbe3ed"}
-              onChange={(event) => {
-                const currentColor =
-                  typeof border.color === "string"
-                    ? { desktop: border.color }
-                    : border.color || {};
-                updateBorder(
-                  "color",
-                  { ...currentColor, [device]: event.target.value },
-                  borderState === "hover",
-                );
-              }}
-            />
-          </Field>
+          <ColorControl
+            label="Border Color"
+            value={String(getResponsiveScalar(border.color, device) || "#dbe3ed")}
+            onChange={(value) => {
+              const currentColor = typeof border.color === "string" ? { desktop: border.color } : border.color || {};
+              updateBorder("color", { ...currentColor, [device]: value }, borderState === "hover");
+            }}
+          />
 
           <UnitControl
             label="Border Radius"
@@ -7235,6 +8166,7 @@ export default function UniversalBuilder({ target }: Props) {
                 [device]: value,
               }, borderState === "hover")
             }
+            allowAuto={false}
           />
 
           <TextControl
@@ -7302,20 +8234,16 @@ export default function UniversalBuilder({ target }: Props) {
             value={selectedPadding}
             onChange={(value) => updateSpacing("padding", value)}
           />
-          <SelectControl
+          <SegmentedControl
             label="Width"
             value={getWidthMode(node.advanced?.widthMode, device)}
             options={[
-              { label: "Default", value: "default" },
-              { label: "Inline (Auto)", value: "inline" },
-              { label: "Full Width", value: "full" },
-              { label: "Custom", value: "custom" },
+              { label: "", value: "default", icon: "PanelTop", title: "Default" },
+              { label: "", value: "inline", icon: "Minimize2", title: "Inline / Auto" },
+              { label: "", value: "full", icon: "Maximize2", title: "Full Width" },
+              { label: "", value: "custom", icon: "Ruler", title: "Custom Width" },
             ]}
-            onChange={(value) =>
-              updateResponsiveAdvancedWidthMode(
-                value as "default" | "inline" | "full" | "custom",
-              )
-            }
+            onChange={(value) => updateResponsiveAdvancedWidthMode(value as "default" | "inline" | "full" | "custom")}
           />
           {getWidthMode(node.advanced?.widthMode, device) === "custom" ? (
             <UnitControl
@@ -7325,13 +8253,17 @@ export default function UniversalBuilder({ target }: Props) {
               placeholder="240px"
             />
           ) : null}
-          <SelectControl
+          <SegmentedControl
             label="Align Self"
             value={String(getResponsiveValue(node.styles.alignSelf, device) || "auto")}
-            options={["auto", "flex-start", "center", "flex-end", "stretch", "baseline"].map((value) => ({
-              label: value,
-              value,
-            }))}
+            options={[
+              { label: "", value: "auto", icon: "Minus", title: "Auto" },
+              { label: "", value: "flex-start", icon: "AlignStartVertical", title: "Start" },
+              { label: "", value: "center", icon: "AlignCenterVertical", title: "Center" },
+              { label: "", value: "flex-end", icon: "AlignEndVertical", title: "End" },
+              { label: "", value: "stretch", icon: "StretchVertical", title: "Stretch" },
+              { label: "", value: "baseline", icon: "Baseline", title: "Baseline" },
+            ]}
             onChange={(value) => updateResponsiveStyle("alignSelf", value)}
           />
           <SelectControl
@@ -7434,18 +8366,18 @@ export default function UniversalBuilder({ target }: Props) {
             />
           ))}
 
-          <TextControl
+          <UnitControl
             label="Offset X"
-            value={String(transform.translateX || "")}
+            value={String(transform.translateX || "0px")}
             onChange={(value) => updateTransform("translateX", value)}
-            placeholder="0px"
+            allowAuto={false}
           />
 
-          <TextControl
+          <UnitControl
             label="Offset Y"
-            value={String(transform.translateY || "")}
+            value={String(transform.translateY || "0px")}
             onChange={(value) => updateTransform("translateY", value)}
-            placeholder="0px"
+            allowAuto={false}
           />
 
           <SegmentedControl
@@ -7720,6 +8652,82 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  const showGlobalSiteShellPreview =
+    target.kind !== "header" && target.kind !== "footer";
+
+  const renderGlobalTemplatePreview = (
+    label: "Header" | "Footer",
+    template: GlobalTemplatePreview | null,
+  ) => {
+    if (!showGlobalSiteShellPreview) return null;
+
+    const isHeader = label === "Header";
+    const nodes = template?.root ?? [];
+    const statusText = template
+      ? template.status === "PUBLISHED"
+        ? "Published"
+        : "Draft · not visible publicly until published"
+      : "No saved template yet";
+
+    return (
+      <div
+        data-global-template-preview={label.toLowerCase()}
+        style={{
+          position: "relative",
+          width: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
+          margin: isHeader ? "0 0 12px" : "12px 0 0",
+          border: "1px dashed #94a3b8",
+          background: "#ffffff",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            zIndex: 5,
+            minHeight: 22,
+            padding: "4px 9px",
+            boxSizing: "border-box",
+            background: "#eff6ff",
+            color: "#1d4ed8",
+            borderBottom: "1px dashed #bfdbfe",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: ".04em",
+            textTransform: "uppercase",
+          }}
+        >
+          Global {label} · {template?.title || "Header/Footer Builder"} · {statusText}
+        </div>
+
+        {nodes.length ? (
+          <div
+            style={{
+              width: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+              pointerEvents: "none",
+            }}
+          >
+            {nodes.map((node) => (
+              <PreviewNode
+                key={`${label.toLowerCase()}-${node.id}`}
+                node={node}
+                device={device}
+              />
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: 12, color: "#64748b", fontSize: 12 }}>
+            Build and save the global {label.toLowerCase()} in Appearance → {label} Builder. It will appear around this page preview.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className={styles.loadingPage}>
@@ -7739,7 +8747,13 @@ export default function UniversalBuilder({ target }: Props) {
       }}
       onDragEnd={handleDragEnd}
     >
-      <main className={styles.builder}>
+      <main
+        className={`${styles.builder} ${
+          target.kind === "header" || target.kind === "footer"
+            ? styles.builderInsideAdmin
+            : ""
+        }`}
+      >
         <datalist id="builder-google-fonts">
           {GOOGLE_FONT_FAMILIES.map((family) => (
             <option key={family} value={family} />
@@ -7756,7 +8770,7 @@ export default function UniversalBuilder({ target }: Props) {
         </datalist>
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <Link href="/admin/builder" className={styles.backButton}>
+            <Link href={target.kind === "header" ? "/admin/appearance/header-builder" : target.kind === "footer" ? "/admin/appearance/footer-builder" : "/admin/builder"} className={styles.backButton}>
               <ArrowLeft size={17} />
             </Link>
 
@@ -8023,31 +9037,12 @@ export default function UniversalBuilder({ target }: Props) {
                   <div className={styles.settingsPanel}>
                     <ControlGroup title="Global Colors" defaultOpen>
                       {globalStyles.colors.map((color) => (
-                        <Field key={color.id} label={color.name}>
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "48px 1fr",
-                              gap: 8,
-                            }}
-                          >
-                            <input
-                              type="color"
-                              value={color.value}
-                              onChange={(event) =>
-                                setGlobalColor(color.id, event.target.value)
-                              }
-                            />
-
-                            <input
-                              value={color.value}
-                              onChange={(event) =>
-                                setGlobalColor(color.id, event.target.value)
-                              }
-                              style={CONTROL_STYLE}
-                            />
-                          </div>
-                        </Field>
+                        <ColorControl
+                          key={color.id}
+                          label={color.name}
+                          value={color.value}
+                          onChange={(value) => setGlobalColor(color.id, value)}
+                        />
                       ))}
                     </ControlGroup>
 
@@ -8067,28 +9062,22 @@ export default function UniversalBuilder({ target }: Props) {
                     </ControlGroup>
 
                     <ControlGroup title="Theme Defaults">
-                      <TextControl
+                      <UnitControl
                         label="Container Width"
                         value={String(settings.containerWidth || "1200px")}
-                        onChange={(value) =>
-                          updateSetting("containerWidth", value)
-                        }
+                        onChange={(value) => updateSetting("containerWidth", value)}
                       />
 
-                      <TextControl
+                      <UnitControl
                         label="Default Widget Gap"
                         value={String(settings.defaultWidgetGap || "10px")}
-                        onChange={(value) =>
-                          updateSetting("defaultWidgetGap", value)
-                        }
+                        onChange={(value) => updateSetting("defaultWidgetGap", value)}
                       />
 
-                      <TextControl
+                      <UnitControl
                         label="Default Section Padding"
                         value={String(settings.defaultSectionPadding || "20px")}
-                        onChange={(value) =>
-                          updateSetting("defaultSectionPadding", value)
-                        }
+                        onChange={(value) => updateSetting("defaultSectionPadding", value)}
                       />
                     </ControlGroup>
                   </div>
@@ -8176,17 +9165,28 @@ export default function UniversalBuilder({ target }: Props) {
                 {selectedNode ? (
                   <>
                     <div
-                      style={{
-                        marginBottom: 10,
-                        padding: "8px 10px",
-                        borderRadius: 6,
-                        background: "#eff6ff",
-                        color: "#1d4ed8",
-                        fontSize: 11,
-                        lineHeight: 1.5,
-                      }}
+                      role="group"
+                      aria-label="Responsive device settings"
+                      style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: 7, border: "1px solid #dbe3ed", borderRadius: 8, background: "#f8fafc" }}
                     >
-                      Editing {device}. Desktop is the base; Tablet and Mobile save independent overrides.
+                      {([
+                        ["desktop", Monitor, "Desktop"],
+                        ["tablet", Tablet, "Tablet"],
+                        ["mobile", Smartphone, "Mobile"],
+                      ] as const).map(([targetDevice, DeviceIcon, label]) => (
+                        <button
+                          key={targetDevice}
+                          type="button"
+                          aria-label={`${label} responsive settings`}
+                          aria-pressed={device === targetDevice}
+                          title={`${label} settings`}
+                          onClick={() => setDevice(targetDevice)}
+                          style={{ display: "inline-flex", flex: 1, alignItems: "center", justifyContent: "center", gap: 6, minHeight: 34, border: device === targetDevice ? "1px solid #3984e8" : "1px solid transparent", borderRadius: 6, background: device === targetDevice ? "#ffffff" : "transparent", color: device === targetDevice ? "#1d4ed8" : "#64748b", fontSize: 11, fontWeight: device === targetDevice ? 700 : 500, cursor: "pointer" }}
+                        >
+                          <DeviceIcon size={15} />
+                          <span>{label}</span>
+                        </button>
+                      ))}
                     </div>
                     <div
                       style={{
@@ -8260,12 +9260,10 @@ export default function UniversalBuilder({ target }: Props) {
                         }
                       />
 
-                      <TextControl
+                      <UnitControl
                         label="Container Width"
                         value={String(settings.containerWidth || "1200px")}
-                        onChange={(value) =>
-                          updateSetting("containerWidth", value)
-                        }
+                        onChange={(value) => updateSetting("containerWidth", value)}
                       />
                     </ControlGroup>
 
@@ -8298,6 +9296,8 @@ export default function UniversalBuilder({ target }: Props) {
                       : ""
                 }`}
               >
+                {renderGlobalTemplatePreview("Header", globalHeaderPreview)}
+
                 <DropArea id="root" className={styles.canvasElements}>
                   {layout.root.length === 0 ? (
                     <div className={styles.emptyCanvas}>
@@ -8349,6 +9349,8 @@ export default function UniversalBuilder({ target }: Props) {
                     </SortableContext>
                   )}
                 </DropArea>
+
+                {renderGlobalTemplatePreview("Footer", globalFooterPreview)}
               </div>
             </div>
           </section>
@@ -8465,22 +9467,63 @@ export default function UniversalBuilder({ target }: Props) {
             value={iconPickerTarget.value}
             onClose={() => setIconPickerTarget(null)}
             onSelect={(iconName) => {
-              if (iconPickerTarget.kind === "button" || iconPickerTarget.kind === "widget") {
-                updatePropsValues({ iconName, iconImage: "", iconImageId: "" });
+              const removingIcon = iconName === "";
+
+              if (iconPickerTarget.kind === "button") {
+                updatePropsValues({
+                  iconName,
+                  iconImage: "",
+                  iconImageId: "",
+                  ...(removingIcon ? { icon: "" } : {}),
+                });
+              } else if (iconPickerTarget.kind === "widget") {
+                updatePropsValues({
+                  iconName,
+                  iconImage: "",
+                  iconImageId: "",
+                  ...(removingIcon ? { symbol: "", src: "" } : {}),
+                });
+              } else if (iconPickerTarget.kind === "nodeProp") {
+                updatePropsValues({
+                  [iconPickerTarget.key]:
+                    removingIcon && iconPickerTarget.key === "submenuIndicator"
+                      ? "none"
+                      : iconName,
+                });
               } else if (iconPickerTarget.kind === "repeaterItem" && selectedNode) {
-                const entries = Array.isArray(selectedNode.props[iconPickerTarget.key]) ? [...(selectedNode.props[iconPickerTarget.key] as unknown[])] : [];
+                const entries = Array.isArray(selectedNode.props[iconPickerTarget.key])
+                  ? [...(selectedNode.props[iconPickerTarget.key] as unknown[])]
+                  : [];
                 const current = entries[iconPickerTarget.index];
-                const entry = current && typeof current === "object" ? current as Record<string, unknown> : {};
-                entries[iconPickerTarget.index] = { ...entry, iconName, iconImage: "", iconMediaId: "" };
+                const entry = current && typeof current === "object"
+                  ? current as Record<string, unknown>
+                  : {};
+                entries[iconPickerTarget.index] = {
+                  ...entry,
+                  iconName,
+                  iconImage: "",
+                  iconMediaId: "",
+                };
                 updateProps(iconPickerTarget.key, entries);
               } else if (iconPickerTarget.kind === "slideButton" && selectedNode) {
-                const slides = Array.isArray(selectedNode.props.slides) ? [...selectedNode.props.slides] : [];
+                const slides = Array.isArray(selectedNode.props.slides)
+                  ? [...(selectedNode.props.slides as unknown[])]
+                  : [];
                 const slideValue = slides[iconPickerTarget.slideIndex];
-                const slide = slideValue && typeof slideValue === "object" ? slideValue as Record<string, unknown> : {};
+                const slide = slideValue && typeof slideValue === "object"
+                  ? slideValue as Record<string, unknown>
+                  : {};
                 const buttons = Array.isArray(slide.buttons) ? [...slide.buttons] : [];
                 const buttonValue = buttons[iconPickerTarget.buttonIndex];
-                const button = buttonValue && typeof buttonValue === "object" ? buttonValue as Record<string, unknown> : {};
-                buttons[iconPickerTarget.buttonIndex] = { ...button, iconName, iconImage: "", iconImageId: "" };
+                const button = buttonValue && typeof buttonValue === "object"
+                  ? buttonValue as Record<string, unknown>
+                  : {};
+                buttons[iconPickerTarget.buttonIndex] = {
+                  ...button,
+                  iconName,
+                  iconImage: "",
+                  iconImageId: "",
+                };
                 slides[iconPickerTarget.slideIndex] = { ...slide, buttons };
                 updateProps("slides", slides);
               }

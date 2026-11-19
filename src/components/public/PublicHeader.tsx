@@ -216,7 +216,16 @@ function HeaderElementView({
   const widgetStyle = {
     ...Object.fromEntries(
       Object.entries(element.widgetAdvanced || {}).filter(
-        ([key]) => !key.endsWith("Unit") && !key.startsWith("data")
+        ([key]) =>
+          !key.endsWith("Unit") &&
+          !key.startsWith("data") &&
+          !["width", "height", "padding", "margin", "gap"].includes(key) &&
+          ![
+            "background", "backgroundColor", "color", "border", "borderColor",
+            "borderRadius", "boxShadow", "textShadow", "hoverBackground",
+            "hoverBackgroundColor", "hoverColor", "hoverBorder", "hoverBorderColor",
+            "hoverBorderRadius", "hoverBoxShadow", "hoverTextShadow",
+          ].includes(key)
       )
     ),
     ...Object.fromEntries(
@@ -225,6 +234,7 @@ function HeaderElementView({
           !/^(normal|hover)(Background|BackgroundColor|BackgroundImage|BackgroundType|GradientStart|GradientEnd|GradientAngle|Color|Border|BorderType|BorderWidth|BorderColor|BorderRadius|BoxShadow|TextShadow|TransitionDuration)$/.test(
             key
           ) &&
+          !["width", "height", "padding", "margin", "gap"].includes(key) &&
           ![
             "background",
             "hoverBackground",
@@ -254,10 +264,18 @@ function HeaderElementView({
     ...Object.fromEntries(
       (["width", "height", "padding", "margin", "gap"] as const).flatMap(
         (property) =>
-          (["desktop", "tablet", "mobile"] as const).map((device) => [
-            `--widget-${property}-${device}`,
-            element.widgetResponsive?.[property]?.[device] || "initial",
-          ])
+          (["desktop", "tablet", "mobile"] as const).flatMap((device) => {
+            const responsiveValue = element.widgetResponsive?.[property]?.[device];
+            const value =
+              responsiveValue !== undefined && responsiveValue !== null && responsiveValue !== ""
+                ? responsiveValue
+                : device === "desktop"
+                  ? savedWidgetStyle[property] || element.widgetAdvanced?.[property]
+                  : undefined;
+            return value !== undefined && value !== null && value !== ""
+              ? [[`--widget-${property}-${device}`, value]]
+              : [];
+          })
       )
     ),
   } as CSSProperties;
@@ -452,11 +470,11 @@ function HeaderElementView({
         style={{
           ...widgetStyle,
           "--image-widget-width-desktop": element.width?.desktop || "auto",
-          "--image-widget-width-tablet": element.width?.tablet || "auto",
-          "--image-widget-width-mobile": element.width?.mobile || "auto",
+          "--image-widget-width-tablet": element.width?.tablet || element.width?.desktop || "auto",
+          "--image-widget-width-mobile": element.width?.mobile || element.width?.desktop || "auto",
           "--image-widget-height-desktop": element.height?.desktop || "auto",
-          "--image-widget-height-tablet": element.height?.tablet || "auto",
-          "--image-widget-height-mobile": element.height?.mobile || "auto",
+          "--image-widget-height-tablet": element.height?.tablet || element.height?.desktop || "auto",
+          "--image-widget-height-mobile": element.height?.mobile || element.height?.desktop || "auto",
         } as CSSProperties}
       />
     );
@@ -662,26 +680,26 @@ export default function PublicHeader() {
       advanced.buttonHoverBackground || "#3984e8",
     "--button-hover-text": advanced.buttonHoverText || "#ffffff",
     "--header-width-desktop": advanced.width?.desktop || "1200px",
-    "--header-width-tablet": advanced.width?.tablet || "100%",
-    "--header-width-mobile": advanced.width?.mobile || "100%",
+    "--header-width-tablet": advanced.width?.tablet || `var(--header-width-desktop, 1200px)`,
+    "--header-width-mobile": advanced.width?.mobile || `var(--header-width-desktop, 1200px)`,
     "--header-height-desktop": advanced.height?.desktop || "auto",
-    "--header-height-tablet": advanced.height?.tablet || "auto",
-    "--header-height-mobile": advanced.height?.mobile || "auto",
+    "--header-height-tablet": advanced.height?.tablet || `var(--header-height-desktop, auto)`,
+    "--header-height-mobile": advanced.height?.mobile || `var(--header-height-desktop, auto)`,
     "--header-padding-desktop":
       advanced.padding?.desktop || "18px 24px",
     "--header-padding-tablet":
-      advanced.padding?.tablet || "12px 20px",
+      advanced.padding?.tablet || `var(--header-padding-desktop, 18px 24px)`,
     "--header-padding-mobile":
-      advanced.padding?.mobile || "10px 15px",
+      advanced.padding?.mobile || `var(--header-padding-desktop, 18px 24px)`,
     "--header-gap-desktop": advanced.gap?.desktop || "30px",
-    "--header-gap-tablet": advanced.gap?.tablet || "20px",
-    "--header-gap-mobile": advanced.gap?.mobile || "12px",
+    "--header-gap-tablet": advanced.gap?.tablet || `var(--header-gap-desktop, 30px)`,
+    "--header-gap-mobile": advanced.gap?.mobile || `var(--header-gap-desktop, 30px)`,
     "--logo-width-desktop": header.logo?.width?.desktop || "auto",
-    "--logo-width-tablet": header.logo?.width?.tablet || "auto",
-    "--logo-width-mobile": header.logo?.width?.mobile || "auto",
+    "--logo-width-tablet": header.logo?.width?.tablet || `var(--logo-width-desktop, auto)`,
+    "--logo-width-mobile": header.logo?.width?.mobile || `var(--logo-width-desktop, auto)`,
     "--logo-height-desktop": header.logo?.height?.desktop || "auto",
-    "--logo-height-tablet": header.logo?.height?.tablet || "auto",
-    "--logo-height-mobile": header.logo?.height?.mobile || "auto",
+    "--logo-height-tablet": header.logo?.height?.tablet || `var(--logo-height-desktop, auto)`,
+    "--logo-height-mobile": header.logo?.height?.mobile || `var(--logo-height-desktop, auto)`,
     "--header-display": advanced.display || "flex",
     "--header-grid-columns": `repeat(${Math.max(
       1,
@@ -689,8 +707,8 @@ export default function PublicHeader() {
     )}, minmax(0, 1fr))`,
     "--header-flex-wrap": advanced.flexWrap || "wrap",
     "--header-margin-desktop": advanced.margin?.desktop || "0 auto",
-    "--header-margin-tablet": advanced.margin?.tablet || "0 auto",
-    "--header-margin-mobile": advanced.margin?.mobile || "0",
+    "--header-margin-tablet": advanced.margin?.tablet || `var(--header-margin-desktop, 0 auto)`,
+    "--header-margin-mobile": advanced.margin?.mobile || `var(--header-margin-desktop, 0 auto)`,
     "--header-radius": advanced.borderRadius || "0",
     "--header-overlay": advanced.overlayColor || "transparent",
   } as CSSProperties;

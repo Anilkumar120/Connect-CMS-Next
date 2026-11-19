@@ -36,7 +36,8 @@ export type BuilderUnit =
   | "rem"
   | "vw"
   | "vh"
-  | "auto";
+  | "auto"
+  | "custom";
 
 export type BuilderSpacing = {
   top?: string;
@@ -196,6 +197,7 @@ export type BuilderAlignContent =
   | "flex-end"
   | "space-between"
   | "space-around"
+  | "space-evenly"
   | "stretch";
 
 export type BuilderFlexWrap =

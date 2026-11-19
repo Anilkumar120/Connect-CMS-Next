@@ -97,7 +97,15 @@ export default function PublicPostTabsClient({
           </button>
         ))}
       </div>
-      <div role="tabpanel" style={{ display: "grid", gridTemplateColumns: `repeat(var(--builder-prop-columns, ${safeColumns}), minmax(0, 1fr))`, gap }}>
+      <div role="tabpanel" style={{
+        display: "var(--builder-style-display, grid)" as CSSProperties["display"],
+        gridTemplateColumns: `var(--builder-style-grid-template-columns, repeat(var(--builder-prop-columns, ${safeColumns}), minmax(0, 1fr)))`,
+        gap: `var(--builder-style-gap, var(--builder-prop-gap, ${gap}))`,
+        rowGap: "var(--builder-style-row-gap, inherit)",
+        columnGap: "var(--builder-style-column-gap, inherit)",
+        alignItems: "var(--builder-style-align-items, stretch)" as CSSProperties["alignItems"],
+        justifyContent: "var(--builder-style-justify-content, flex-start)" as CSSProperties["justifyContent"],
+      }}>
         {(current?.posts || []).map((post) => (
           <article key={post.id} style={cardStyle}>
             {showImage && post.featuredImage ? (

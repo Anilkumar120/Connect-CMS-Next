@@ -160,51 +160,51 @@
 }
 
 .widgetNormalBackground {
-  background: var(--widget-normal-background) !important;
+  background: var(--widget-normal-background);
 }
 
 .widgetHoverBackground:hover {
-  background: var(--widget-hover-background) !important;
+  background: var(--widget-hover-background);
 }
 
 .widgetNormalColor {
-  color: var(--widget-normal-color) !important;
+  color: var(--widget-normal-color);
 }
 
 .widgetHoverColor:hover {
-  color: var(--widget-hover-color) !important;
+  color: var(--widget-hover-color);
 }
 
 .widgetNormalBorder {
-  border: var(--widget-normal-border) !important;
+  border: var(--widget-normal-border);
 }
 
 .widgetHoverBorder:hover {
-  border: var(--widget-hover-border) !important;
+  border: var(--widget-hover-border);
 }
 
 .widgetNormalBorderRadius {
-  border-radius: var(--widget-normal-border-radius) !important;
+  border-radius: var(--widget-normal-border-radius);
 }
 
 .widgetHoverBorderRadius:hover {
-  border-radius: var(--widget-hover-border-radius) !important;
+  border-radius: var(--widget-hover-border-radius);
 }
 
 .widgetNormalBoxShadow {
-  box-shadow: var(--widget-normal-box-shadow) !important;
+  box-shadow: var(--widget-normal-box-shadow);
 }
 
 .widgetHoverBoxShadow:hover {
-  box-shadow: var(--widget-hover-box-shadow) !important;
+  box-shadow: var(--widget-hover-box-shadow);
 }
 
 .widgetNormalTextShadow {
-  text-shadow: var(--widget-normal-text-shadow) !important;
+  text-shadow: var(--widget-normal-text-shadow);
 }
 
 .widgetHoverTextShadow:hover {
-  text-shadow: var(--widget-hover-text-shadow) !important;
+  text-shadow: var(--widget-hover-text-shadow);
 }
 
 .widgetTransition {
@@ -473,23 +473,23 @@
 
 /* RESPONSIVE */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .footerResponsiveWidget {
-    width: var(--footer-widget-width-mobile, var(--footer-widget-width-tablet, var(--footer-widget-width-desktop, auto)));
-    height: var(--footer-widget-height-mobile, var(--footer-widget-height-tablet, var(--footer-widget-height-desktop, auto)));
-    padding: var(--footer-widget-padding-mobile, var(--footer-widget-padding-tablet, var(--footer-widget-padding-desktop)));
-    margin: var(--footer-widget-margin-mobile, var(--footer-widget-margin-tablet, var(--footer-widget-margin-desktop)));
-    gap: var(--footer-widget-gap-mobile, var(--footer-widget-gap-tablet, var(--footer-widget-gap-desktop)));
+    width: var(--footer-widget-width-mobile, var(--footer-widget-width-desktop, auto));
+    height: var(--footer-widget-height-mobile, var(--footer-widget-height-desktop, auto));
+    padding: var(--footer-widget-padding-mobile, var(--footer-widget-padding-desktop, 0));
+    margin: var(--footer-widget-margin-mobile, var(--footer-widget-margin-desktop, 0));
+    gap: var(--footer-widget-gap-mobile, var(--footer-widget-gap-desktop, 0));
   }
   .footerResponsiveWidget img {
-    width: var(--footer-widget-width-mobile, var(--footer-widget-width-tablet, var(--footer-widget-width-desktop, auto)));
-    height: var(--footer-widget-height-mobile, var(--footer-widget-height-tablet, var(--footer-widget-height-desktop, auto)));
+    width: var(--footer-widget-width-mobile, var(--footer-widget-width-desktop, auto));
+    height: var(--footer-widget-height-mobile, var(--footer-widget-height-desktop, auto));
   }
   .responsiveWidget {
-    width: var(--widget-width-mobile, auto);
-    height: var(--widget-height-mobile, auto);
-    padding: var(--widget-padding-mobile, 0);
-    margin: var(--widget-margin-mobile, 0);
+    width: var(--widget-width-mobile, var(--widget-width-desktop, auto));
+    height: var(--widget-height-mobile, var(--widget-height-desktop, auto));
+    padding: var(--widget-padding-mobile, var(--widget-padding-desktop, 0));
+    margin: var(--widget-margin-mobile, var(--widget-margin-desktop, 0));
   }
   .headerInner {
     display: flex;
@@ -522,12 +522,6 @@
     margin-left: auto;
     font-size: 19px;
     letter-spacing: -0.5px;
-  }
-
-  .logo img {
-    max-width: 150px;
-    width: var(--logo-width-mobile, auto);
-    height: var(--logo-height-mobile, auto);
   }
 
   .navigation {
@@ -700,8 +694,8 @@
   }
 
   .imageWidget img {
-    width: var(--widget-width-mobile, var(--image-widget-width-mobile, auto));
-    height: var(--widget-height-mobile, var(--image-widget-height-mobile, auto));
+    width: var(--widget-width-mobile, var(--image-widget-width-mobile, var(--widget-width-desktop, var(--image-widget-width-desktop, auto))));
+    height: var(--widget-height-mobile, var(--image-widget-height-mobile, var(--widget-height-desktop, var(--image-widget-height-desktop, auto))));
   }
 
   .widgetContainer {
@@ -709,8 +703,9 @@
   }
 
   .logo img {
-    width: var(--widget-width-mobile, var(--logo-width-mobile, auto));
-    height: var(--widget-height-mobile, var(--logo-height-mobile, auto));
+    max-width: 150px;
+    width: var(--widget-width-mobile, var(--logo-width-mobile, var(--widget-width-desktop, var(--logo-width-desktop, auto))));
+    height: var(--widget-height-mobile, var(--logo-height-mobile, var(--widget-height-desktop, var(--logo-height-desktop, auto))));
   }
 
   .footerInner {
@@ -731,13 +726,13 @@
   }
 }
 
-@media (min-width: 769px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1024px) {
   .footerResponsiveWidget {
     width: var(--footer-widget-width-tablet, var(--footer-widget-width-desktop, auto));
     height: var(--footer-widget-height-tablet, var(--footer-widget-height-desktop, auto));
-    padding: var(--footer-widget-padding-tablet, var(--footer-widget-padding-desktop));
-    margin: var(--footer-widget-margin-tablet, var(--footer-widget-margin-desktop));
-    gap: var(--footer-widget-gap-tablet, var(--footer-widget-gap-desktop));
+    padding: var(--footer-widget-padding-tablet, var(--footer-widget-padding-desktop, 0));
+    margin: var(--footer-widget-margin-tablet, var(--footer-widget-margin-desktop, 0));
+    gap: var(--footer-widget-gap-tablet, var(--footer-widget-gap-desktop, 0));
   }
   .footerResponsiveWidget img {
     width: var(--footer-widget-width-tablet, var(--footer-widget-width-desktop, auto));
@@ -749,10 +744,10 @@
   }
 
   .responsiveWidget {
-    width: var(--widget-width-tablet, auto);
-    height: var(--widget-height-tablet, auto);
-    padding: var(--widget-padding-tablet, 0);
-    margin: var(--widget-margin-tablet, 0);
+    width: var(--widget-width-tablet, var(--widget-width-desktop, auto));
+    height: var(--widget-height-tablet, var(--widget-height-desktop, auto));
+    padding: var(--widget-padding-tablet, var(--widget-padding-desktop, 0));
+    margin: var(--widget-margin-tablet, var(--widget-margin-desktop, 0));
   }
   .headerInner {
     width: min(var(--header-width-tablet, 100%), 100%);
@@ -764,13 +759,13 @@
   }
 
   .imageWidget img {
-    width: var(--widget-width-tablet, var(--image-widget-width-tablet, auto));
-    height: var(--widget-height-tablet, var(--image-widget-height-tablet, auto));
+    width: var(--widget-width-tablet, var(--image-widget-width-tablet, var(--widget-width-desktop, var(--image-widget-width-desktop, auto))));
+    height: var(--widget-height-tablet, var(--image-widget-height-tablet, var(--widget-height-desktop, var(--image-widget-height-desktop, auto))));
   }
 
   .logo img {
-    width: var(--widget-width-tablet, var(--logo-width-tablet, auto));
-    height: var(--widget-height-tablet, var(--logo-height-tablet, auto));
+    width: var(--widget-width-tablet, var(--logo-width-tablet, var(--widget-width-desktop, var(--logo-width-desktop, auto))));
+    height: var(--widget-height-tablet, var(--logo-height-tablet, var(--widget-height-desktop, var(--logo-height-desktop, auto))));
   }
 
   .footerInner {

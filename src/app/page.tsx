@@ -63,7 +63,7 @@ async function HomeContent({ searchParams }: Props) {
 
       if (post) {
         return (
-          <PublicLayout>
+          <PublicLayout pathname="/">
             <PublicPostView post={post} settings={settings} />
           </PublicLayout>
         );
@@ -97,7 +97,7 @@ async function HomeContent({ searchParams }: Props) {
 
       if (page) {
         return (
-          <PublicLayout>
+          <PublicLayout pathname="/">
             <CMSPageView page={page} />
           </PublicLayout>
         );
@@ -108,7 +108,7 @@ async function HomeContent({ searchParams }: Props) {
   }
 
   return (
-    <PublicLayout>
+    <PublicLayout pathname="/">
       <PublicPostsListing />
     </PublicLayout>
   );

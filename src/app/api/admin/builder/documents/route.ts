@@ -19,7 +19,7 @@ const ALLOWED_KINDS = [
 type BuilderKind = (typeof ALLOWED_KINDS)[number];
 
 type SaveBody = {
-  action?: "save" | "restore";
+  action?: "save" | "restore" | "moveToTrash" | "restoreFromTrash" | "permanentlyDelete" | "updateConditions";
   revisionId?: string;
   documentKey?: string;
   kind?: BuilderKind;
@@ -187,10 +187,60 @@ function isValidLayout(
   return true;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizePageRules(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null;
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") return null;
+    const rule = entry.trim();
+    if (!rule || rule.length > 300) return null;
+    if (rule !== "*" && (!rule.startsWith("/") || rule.startsWith("//") || rule.includes("\\"))) return null;
+    result.push(rule);
+  }
+  return [...new Set(result)];
+}
+
+function isAdministrator(role: string | undefined): boolean {
+  return role === "SUPER_ADMIN" || role === "ADMIN";
+}
+
 export async function GET(request: NextRequest) {
   const auth = await authorize();
 
   if (auth.response) return auth.response;
+
+  const kindParam = request.nextUrl.searchParams.get("kind");
+  const view = request.nextUrl.searchParams.get("view") === "trash" ? "trash" : "active";
+
+  if (kindParam === "header" || kindParam === "footer") {
+    try {
+      const documents = await prisma.builderDocument.findMany({
+        where: {
+          kind: kindParam,
+          status: view === "trash" ? "ARCHIVED" : { in: ["DRAFT", "PUBLISHED"] },
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          documentKey: true,
+          kind: true,
+          title: true,
+          status: true,
+          conditions: true,
+          updatedAt: true,
+          createdAt: true,
+        },
+      });
+      return NextResponse.json({ success: true, documents, view });
+    } catch (error) {
+      console.error("Builder template list error:", error);
+      return jsonError("Unable to load Header/Footer templates.", 500);
+    }
+  }
 
   const documentKey =
     request.nextUrl.searchParams.get("documentKey");
@@ -273,6 +323,82 @@ export async function POST(request: NextRequest) {
     return jsonError(
       "A valid documentKey is required.",
     );
+  }
+
+  if (
+    body.action === "moveToTrash" ||
+    body.action === "restoreFromTrash" ||
+    body.action === "permanentlyDelete" ||
+    body.action === "updateConditions"
+  ) {
+    if (!isAdministrator(auth.user?.role)) {
+      return jsonError("Only administrators can manage Header/Footer templates.", 403);
+    }
+
+    try {
+      const existing = await prisma.builderDocument.findUnique({
+        where: { documentKey: body.documentKey! },
+      });
+      if (!existing || (existing.kind !== "header" && existing.kind !== "footer")) {
+        return jsonError("Header/Footer template not found.", 404);
+      }
+
+      if (body.action === "permanentlyDelete") {
+        if (existing.status !== "ARCHIVED") {
+          return jsonError("Move the template to Trash before permanently deleting it.", 400);
+        }
+        await prisma.builderDocument.delete({ where: { id: existing.id } });
+        return NextResponse.json({ success: true, message: "Template permanently deleted." });
+      }
+
+      if (body.action === "moveToTrash") {
+        if (existing.status === "ARCHIVED") {
+          return NextResponse.json({ success: true, message: "Template is already in Trash." });
+        }
+        const previousSettings = isRecord(existing.settings) ? existing.settings : {};
+        const trashed = await prisma.builderDocument.update({
+          where: { id: existing.id },
+          data: {
+            status: "ARCHIVED",
+            settings: { ...previousSettings, __trashPreviousStatus: existing.status } as Prisma.InputJsonValue,
+          },
+        });
+        return NextResponse.json({ success: true, message: "Template moved to Trash.", document: trashed });
+      }
+
+      if (body.action === "restoreFromTrash") {
+        if (existing.status !== "ARCHIVED") return jsonError("Only trashed templates can be restored.", 400);
+        const previousSettings = isRecord(existing.settings) ? { ...existing.settings } : {};
+        const previousStatus = previousSettings.__trashPreviousStatus;
+        delete previousSettings.__trashPreviousStatus;
+        const restoredStatus = previousStatus === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
+        const restored = await prisma.builderDocument.update({
+          where: { id: existing.id },
+          data: {
+            status: restoredStatus,
+            settings: previousSettings as Prisma.InputJsonValue,
+            ...(restoredStatus === "PUBLISHED" && !existing.publishedAt ? { publishedAt: new Date() } : {}),
+          },
+        });
+        return NextResponse.json({ success: true, message: "Template restored successfully.", document: restored });
+      }
+
+      if (body.action === "updateConditions") {
+        if (existing.status === "ARCHIVED") return jsonError("Restore the template before editing its display conditions.", 400);
+        if (!isRecord(body.conditions)) return jsonError("Display conditions are invalid.");
+        const include = normalizePageRules(body.conditions.include);
+        const exclude = normalizePageRules(body.conditions.exclude);
+        if (!include || !exclude) return jsonError("Use page paths starting with /, or * for all pages. Maximum 100 rules per list.");
+        const updated = await prisma.builderDocument.update({
+          where: { id: existing.id },
+          data: { conditions: { include, exclude } as Prisma.InputJsonValue },
+        });
+        return NextResponse.json({ success: true, message: "Display conditions saved.", document: updated });
+      }
+    } catch (error) {
+      console.error("Builder template lifecycle action failed:", error);
+      return jsonError(error instanceof Error ? error.message : "Unable to update template.", 500);
+    }
   }
 
   // Restore a saved revision.
@@ -486,6 +612,12 @@ export async function POST(request: NextRequest) {
             "Document key is already used by another builder type.",
           );
         }
+        if (existing?.status === "ARCHIVED") {
+          throw new Error("This template is in Trash. Restore it before editing.");
+        }
+
+        const cleanSettings = isRecord(body.settings) ? { ...body.settings } : {};
+        delete cleanSettings.__trashPreviousStatus;
 
         const document =
           await tx.builderDocument.upsert({
@@ -501,7 +633,7 @@ export async function POST(request: NextRequest) {
               postTypeSlug: body.postTypeSlug ?? null,
               status: body.status!,
               layout,
-              settings,
+              settings: cleanSettings as Prisma.InputJsonValue,
               globalStyles,
               conditions,
               publishedAt:
@@ -517,7 +649,7 @@ export async function POST(request: NextRequest) {
               postTypeSlug: body.postTypeSlug ?? null,
               status: body.status!,
               layout,
-              settings,
+              settings: cleanSettings as Prisma.InputJsonValue,
               globalStyles,
               conditions,
               ...(body.status === "PUBLISHED"

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useId, type CSSProperties, type ReactNode } from "react";
 import sanitizeHtml from "sanitize-html";
 import Link from "next/link";
 import type {
@@ -13,6 +13,7 @@ import {
 } from "@/lib/builder/spacing";
 import {
   getResponsiveBuilderPropOverrides,
+  resolveBuilderProps,
   resolveBuilderStyles,
 } from "@/lib/builder/responsive";
 import PublicNavigationMenu, {
@@ -53,6 +54,12 @@ function safeUrl(value: unknown, image = false): string {
   } catch {
     return "";
   }
+}
+
+function cssLength(value: unknown, fallback: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) return `${value}px`;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return fallback;
 }
 
 function responsive<T>(
@@ -136,9 +143,12 @@ function backgroundStyle(
   return style;
 }
 
-function nodeStyle(node: BuilderNode): CSSProperties {
+function nodeStyleForDevice(
+  node: BuilderNode,
+  device: "desktop" | "tablet" | "mobile",
+): CSSProperties {
   const style: Record<string, string | number | undefined> = {};
-  const s = resolveBuilderStyles(node.styles, "desktop");
+  const s = resolveBuilderStyles(node.styles, device);
   const put = (key: string, value: unknown) => {
     if (typeof value === "string" || typeof value === "number") {
       style[key] = value;
@@ -146,44 +156,44 @@ function nodeStyle(node: BuilderNode): CSSProperties {
   };
 
   for (const [key, value] of Object.entries({
-    width: responsive(s.width),
-    height: responsive(s.height),
-    minWidth: responsive(s.minWidth),
-    maxWidth: responsive(s.maxWidth),
-    minHeight: responsive(s.minHeight),
-    maxHeight: responsive(s.maxHeight),
-    display: responsive(s.display),
-    flexDirection: responsive(s.direction),
-    justifyContent: responsive(s.justifyContent),
-    alignItems: responsive(s.alignItems),
-    alignContent: responsive(s.alignContent),
-    alignSelf: responsive(s.alignSelf),
-    flexWrap: responsive(s.flexWrap),
-    gap: responsive(s.gap),
-    rowGap: responsive(s.rowGap),
-    columnGap: responsive(s.columnGap),
-    flexGrow: responsive(s.flexGrow),
-    flexShrink: responsive(s.flexShrink),
-    flexBasis: responsive(s.flexBasis),
-    order: responsive(s.order),
-    gridTemplateColumns: responsive(s.gridTemplateColumns),
-    gridTemplateRows: responsive(s.gridTemplateRows),
-    gridAutoColumns: responsive(s.gridAutoColumns),
-    gridAutoRows: responsive(s.gridAutoRows),
-    gridAutoFlow: responsive(s.gridAutoFlow),
-    gridColumn: responsive(s.gridColumn),
-    gridRow: responsive(s.gridRow),
-    color: responsive(s.color),
+    width: responsive(s.width, device),
+    height: responsive(s.height, device),
+    minWidth: responsive(s.minWidth, device),
+    maxWidth: responsive(s.maxWidth, device),
+    minHeight: responsive(s.minHeight, device),
+    maxHeight: responsive(s.maxHeight, device),
+    display: responsive(s.display, device),
+    flexDirection: responsive(s.direction, device),
+    justifyContent: responsive(s.justifyContent, device),
+    alignItems: responsive(s.alignItems, device),
+    alignContent: responsive(s.alignContent, device),
+    alignSelf: responsive(s.alignSelf, device),
+    flexWrap: responsive(s.flexWrap, device),
+    gap: responsive(s.gap, device),
+    rowGap: responsive(s.rowGap, device),
+    columnGap: responsive(s.columnGap, device),
+    flexGrow: responsive(s.flexGrow, device),
+    flexShrink: responsive(s.flexShrink, device),
+    flexBasis: responsive(s.flexBasis, device),
+    order: responsive(s.order, device),
+    gridTemplateColumns: responsive(s.gridTemplateColumns, device),
+    gridTemplateRows: responsive(s.gridTemplateRows, device),
+    gridAutoColumns: responsive(s.gridAutoColumns, device),
+    gridAutoRows: responsive(s.gridAutoRows, device),
+    gridAutoFlow: responsive(s.gridAutoFlow, device),
+    gridColumn: responsive(s.gridColumn, device),
+    gridRow: responsive(s.gridRow, device),
+    color: responsive(s.color, device),
     mixBlendMode: s.blendMode,
     boxShadow: s.boxShadow,
     opacity: s.opacity,
     zIndex: s.zIndex,
     overflow: s.overflow,
     position: s.position === "default" ? undefined : s.position,
-    top: responsive(s.top),
-    right: responsive(s.right),
-    bottom: responsive(s.bottom),
-    left: responsive(s.left),
+    top: responsive(s.top, device),
+    right: responsive(s.right, device),
+    bottom: responsive(s.bottom, device),
+    left: responsive(s.left, device),
     transition: s.transition,
     transitionDuration: s.transitionDuration,
     transform: s.transform || transformCss(s.transformSettings),
@@ -203,43 +213,49 @@ function nodeStyle(node: BuilderNode): CSSProperties {
     put("animationTimingFunction", s.motion.animationEasing || "ease");
     put("animationFillMode", "both");
   }
-  if (node.advanced?.hideOnDesktop) style.display = "none";
+  if (
+    (device === "desktop" && node.advanced?.hideOnDesktop) ||
+    (device === "tablet" && node.advanced?.hideOnTablet) ||
+    (device === "mobile" && node.advanced?.hideOnMobile)
+  ) {
+    style.display = "none";
+  }
 
-  const widthMode = responsive(node.advanced?.widthMode);
+  const widthMode = responsive(node.advanced?.widthMode, device);
   if (widthMode === "inline") put("width", "fit-content");
   if (widthMode === "full") put("width", "100%");
   if (widthMode === "default") put("width", undefined);
 
   if (["section", "container", "row", "column", "grid"].includes(node.type)) {
-    style.display = responsive(s.display) || (node.type === "grid" ? "grid" : "flex");
+    style.display = responsive(s.display, device) || (node.type === "grid" ? "grid" : "flex");
     if (style.display === "flex" && !style.flexDirection) {
       style.flexDirection =
-        responsive(s.direction) || (node.type === "row" ? "row" : "column");
+        responsive(s.direction, device) || (node.type === "row" ? "row" : "column");
     }
   }
 
   put(
     "padding",
     builderSpacingCss(
-      combineBuilderSpacing(responsive(s.padding), responsive(s.stylePadding)),
+      combineBuilderSpacing(responsive(s.padding, device), responsive(s.stylePadding, device)),
     ),
   );
   put(
     "margin",
     builderSpacingCss(
-      combineBuilderSpacing(responsive(s.margin), responsive(s.styleMargin)),
+      combineBuilderSpacing(responsive(s.margin, device), responsive(s.styleMargin, device)),
     ),
   );
-  put("borderRadius", responsive(s.border?.radius));
+  put("borderRadius", responsive(s.border?.radius, device));
   if (s.border?.style && s.border.style !== "none") {
     put("borderStyle", s.border.style);
     put("borderWidth", s.border.width || "1px");
-    put("borderColor", responsive(s.border.color) || "#dbe3ed");
+    put("borderColor", responsive(s.border.color, device) || "#dbe3ed");
   }
 
   if (s.typography) {
     put("fontFamily", s.typography.fontFamily);
-    put("fontSize", responsive(s.typography.fontSize));
+    put("fontSize", responsive(s.typography.fontSize, device));
     put("fontWeight", s.typography.fontWeight);
     put("lineHeight", s.typography.lineHeight);
     put("letterSpacing", s.typography.letterSpacing);
@@ -247,12 +263,12 @@ function nodeStyle(node: BuilderNode): CSSProperties {
     put("fontStyle", s.typography.fontStyle);
     put("textTransform", s.typography.textTransform);
     put("textDecoration", s.typography.textDecoration);
-    put("textAlign", responsive(s.typography.textAlign));
+    put("textAlign", responsive(s.typography.textAlign, device));
     put("textShadow", s.typography.textShadow);
     put("WebkitTextStroke", s.typography.textStroke);
   }
 
-  Object.assign(style, backgroundStyle(s.background, "desktop"));
+  Object.assign(style, backgroundStyle(s.background, device));
   if (s.mask?.enabled) {
     const masks: Record<string, string> = {
       circle: "circle(50% at 50% 50%)",
@@ -295,35 +311,57 @@ function nodeStyle(node: BuilderNode): CSSProperties {
 }
 
 function layoutChildrenStyle(node: BuilderNode): CSSProperties {
-  const style = nodeStyle(node);
+  // The public DOM consumes CSS variables instead of hard-coded inline values.
+  // Device media rules can therefore override them with normal cascade rules.
   const childrenStyle: CSSProperties = {
-    display: style.display,
-    flexDirection: style.flexDirection,
-    justifyContent: style.justifyContent,
-    alignItems: style.alignItems,
-    alignContent: style.alignContent,
-    flexWrap: style.flexWrap,
-    gap: style.gap,
-    rowGap: style.rowGap,
-    columnGap: style.columnGap,
-    gridTemplateColumns: style.gridTemplateColumns,
-    gridTemplateRows: style.gridTemplateRows,
-    gridAutoColumns: style.gridAutoColumns,
-    gridAutoRows: style.gridAutoRows,
-    gridAutoFlow: style.gridAutoFlow,
+    display: "var(--builder-layout-display, flex)",
+    flexDirection: "var(--builder-layout-flex-direction, column)" as CSSProperties["flexDirection"],
+    justifyContent: "var(--builder-layout-justify-content, flex-start)",
+    alignItems: "var(--builder-layout-align-items, stretch)",
+    alignContent: "var(--builder-layout-align-content, stretch)",
+    flexWrap: "var(--builder-layout-flex-wrap, nowrap)" as CSSProperties["flexWrap"],
+    gap: "var(--builder-layout-gap, 0px)",
+    rowGap: "var(--builder-layout-row-gap, 0px)",
+    columnGap: "var(--builder-layout-column-gap, 0px)",
+    gridTemplateColumns: "var(--builder-layout-grid-template-columns, none)",
+    gridTemplateRows: "var(--builder-layout-grid-template-rows, auto)",
+    gridAutoColumns: "var(--builder-layout-grid-auto-columns, auto)",
+    gridAutoRows: "var(--builder-layout-grid-auto-rows, auto)",
+    gridAutoFlow: "var(--builder-layout-grid-auto-flow, row)",
+    width: "var(--builder-layout-width, 100%)",
+    maxWidth: "var(--builder-layout-max-width, 100%)",
+    marginLeft: "var(--builder-layout-margin-left, 0px)",
+    marginRight: "var(--builder-layout-margin-right, 0px)",
+    boxSizing: "border-box",
   };
+  return childrenStyle;
+}
 
-  if (node.type === "section" && node.props.contentWidth !== "full") {
-    childrenStyle.width = "100%";
-    childrenStyle.maxWidth = String(node.props.containerWidth || "1200px");
-    childrenStyle.marginLeft = "auto";
-    childrenStyle.marginRight = "auto";
-  } else if (node.type === "section") {
-    childrenStyle.width = "100%";
-    childrenStyle.maxWidth = "none";
+function nodeStyle(node: BuilderNode): CSSProperties {
+  const devices = ["desktop", "tablet", "mobile"] as const;
+  const resolved = devices.map((device) => nodeStyleForDevice(node, device));
+  const keys = new Set<string>();
+  for (const value of resolved) {
+    Object.keys(value).forEach((key) => keys.add(key));
   }
 
-  return childrenStyle;
+  const result: Record<string, string | number> = {};
+  for (const key of keys) {
+    const desktopValue = (resolved[0] as Record<string, unknown>)[key];
+    const defaultDisplay: Record<string, string> = {
+      section: "block", container: "block", row: "block", column: "block", grid: "block",
+      button: "inline-flex", icon: "inline-flex", "icon-box": "flex", "icon-list": "flex",
+      "social-icons": "flex", "image-carousel": "flex", "media-carousel": "flex",
+      "post-info": "flex", "author-box": "flex", "search-form": "flex", "price-list": "grid",
+      "posts": "grid", "loop-grid": "grid", "loop-carousel": "flex", "post-tabs": "block",
+    };
+    const fallback = desktopValue === undefined
+      ? (key === "display" ? (defaultDisplay[node.type] || "block") : "initial")
+      : String(desktopValue);
+    const variableName = `--builder-style-${cssPropertyName(key)}`;
+    result[key] = `var(${variableName}, ${fallback})`;
+  }
+  return result as CSSProperties;
 }
 
 function responsiveCssValue(value: unknown): string | undefined {
@@ -340,244 +378,245 @@ function cssPropertyName(property: string): string {
   return property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
-function responsiveCss(nodes: BuilderNode[]): string {
+function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
   const rules: string[] = [];
   const layoutTypes = new Set(["section", "container", "row", "column", "grid"]);
+  const devices = ["desktop", "tablet", "mobile"] as const;
+
+  const cssValue = (value: unknown): string | undefined => {
+    if (typeof value !== "string" && typeof value !== "number") return undefined;
+    const normalized = String(value).trim();
+    if (!normalized || /[;{}<>]/.test(normalized)) return undefined;
+    return /^[\w\s#.,%()+/:'"-]+$/.test(normalized) ? normalized : undefined;
+  };
 
   const collect = (node: BuilderNode) => {
-    const selector = `[data-builder-node-id=${JSON.stringify(node.id)}]`;
+    const selector = `${documentSelector} [data-builder-node-id=${JSON.stringify(node.id)}]`;
+    const childrenSelector = `${documentSelector} [data-builder-layout-children=${JSON.stringify(node.id)}]`;
 
-    for (const device of ["tablet", "mobile"] as const) {
+    for (const device of devices) {
       const style = resolveBuilderStyles(node.styles, device);
+      const rawNodeStyle = nodeStyleForDevice(node, device) as Record<string, unknown>;
       const root = new Map<string, string>();
       const layout = new Map<string, string>();
-      const hover = new Map<string, string>();
+      const widgetProps = resolveBuilderProps(node.props, device);
+      const children = node.children || [];
 
       const add = (target: Map<string, string>, property: string, value: unknown) => {
-        const resolvedValue =
-          value && typeof value === "object" && !Array.isArray(value)
-            ? responsive(
-                value as { desktop?: unknown; tablet?: unknown; mobile?: unknown },
-                device,
-              )
-            : value;
-        const cssValue = responsiveCssValue(resolvedValue);
-        if (cssValue !== undefined) target.set(property, cssValue);
+        const normalized = cssValue(value);
+        if (normalized !== undefined) target.set(property, normalized);
       };
 
-      // Common Style-tab controls. The exact same controls are edited for each
-      // device; values not overridden on Tablet/Mobile continue from Desktop.
-      for (const [property, value] of Object.entries({
-        width: style.width,
-        height: style.height,
-        minWidth: style.minWidth,
-        maxWidth: style.maxWidth,
-        minHeight: style.minHeight,
-        maxHeight: style.maxHeight,
-        display: layoutTypes.has(node.type) ? undefined : style.display,
-        alignSelf: style.alignSelf,
-        flexGrow: style.flexGrow,
-        flexShrink: style.flexShrink,
-        flexBasis: style.flexBasis,
-        order: style.order,
-        top: style.top,
-        right: style.right,
-        bottom: style.bottom,
-        left: style.left,
-        color: style.color,
-        boxShadow: style.boxShadow,
-        opacity: style.opacity,
-        zIndex: style.zIndex,
-        overflow: style.overflow,
-        position: style.position === "default" ? undefined : style.position,
-        transform: style.transform || transformCss(style.transformSettings),
-        transformOrigin: style.transformSettings?.origin,
-        transition: style.transition,
-        transitionDuration: style.transitionDuration,
-      })) {
-        add(root, cssPropertyName(property), value);
-      }
-
-      const typography = style.typography;
-      if (typography) {
-        for (const [property, value] of Object.entries({
-          fontFamily: typography.fontFamily,
-          fontSize: typography.fontSize,
-          fontWeight: typography.fontWeight,
-          lineHeight: typography.lineHeight,
-          letterSpacing: typography.letterSpacing,
-          wordSpacing: typography.wordSpacing,
-          fontStyle: typography.fontStyle,
-          textTransform: typography.textTransform,
-          textDecoration: typography.textDecoration,
-          textAlign: typography.textAlign,
-          textShadow: typography.textShadow,
-          WebkitTextStroke: typography.textStroke,
-        })) {
+      // Every Builder Style property is expressed as a CSS variable. This
+      // keeps base and responsive rules in the stylesheet, not inline style.
+      for (const [property, value] of Object.entries(rawNodeStyle)) {
+        if (property === "display" && layoutTypes.has(node.type)) {
+          const hidden = value === "none";
+          add(root, "display", hidden ? "none" : "block");
+        } else {
           add(root, cssPropertyName(property), value);
         }
       }
 
-      const border = style.border;
-      if (border) {
-        add(root, "border-style", border.style);
-        add(root, "border-width", border.width);
-        add(root, "border-color", border.color);
-        add(root, "border-radius", border.radius);
-      }
-
-      const background = backgroundStyle(style.background, device);
-      for (const [property, value] of Object.entries(background)) {
-        add(root, cssPropertyName(property), value);
-      }
-
-      if (style.mask?.enabled) {
-        const masks: Record<string, string> = {
-          circle: "circle(50% at 50% 50%)",
-          ellipse: "ellipse(50% 40% at 50% 50%)",
-          rounded: "inset(0 round 20%)",
-          triangle: "polygon(50% 0, 0 100%, 100% 100%)",
-          "triangle-down": "polygon(0 0, 100% 0, 50% 100%)",
-          diamond: "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)",
-          pentagon: "polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%)",
-          hexagon: "polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)",
-          star: "polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 95%, 50% 72%, 21% 95%, 32% 57%, 2% 35%, 39% 35%)",
-        };
-        add(root, "clip-path", masks[style.mask.shape || "circle"] || masks.circle);
-      }
-
-      if (style.filters) {
-        const filters = style.filters;
-        const filterValue = [
-          filters.blur ? `blur(${filters.blur}px)` : "",
-          filters.brightness !== undefined ? `brightness(${filters.brightness}%)` : "",
-          filters.contrast !== undefined ? `contrast(${filters.contrast}%)` : "",
-          filters.saturation !== undefined ? `saturate(${filters.saturation}%)` : "",
-          filters.hue ? `hue-rotate(${filters.hue}deg)` : "",
-          filters.grayscale ? `grayscale(${filters.grayscale}%)` : "",
-          filters.sepia ? `sepia(${filters.sepia}%)` : "",
-          filters.invert ? `invert(${filters.invert}%)` : "",
-        ].filter(Boolean).join(" ");
-        add(root, "filter", filterValue);
-      }
-
-      const padding = builderSpacingCss(
-        combineBuilderSpacing(responsive(style.padding, device), responsive(style.stylePadding, device)),
-      );
-      const margin = builderSpacingCss(
-        combineBuilderSpacing(responsive(style.margin, device), responsive(style.styleMargin, device)),
-      );
-      add(root, "padding", padding);
-      add(root, "margin", margin);
-
+      // Layout properties belong to the inner layout wrapper. The same model
+      // is used in Desktop, Tablet and Mobile, with each device resolving its
+      // own merged values (Tablet/Mobile inherit directly from Desktop).
       if (layoutTypes.has(node.type)) {
-        add(layout, "display", style.display || (node.type === "grid" ? "grid" : "flex"));
-        add(layout, "flex-direction", style.direction || (node.type === "row" ? "row" : "column"));
-        add(layout, "justify-content", style.justifyContent);
-        add(layout, "align-items", style.alignItems);
-        add(layout, "align-content", style.alignContent);
-        add(layout, "flex-wrap", style.flexWrap);
-        add(layout, "gap", style.gap);
-        add(layout, "row-gap", style.rowGap);
-        add(layout, "column-gap", style.columnGap);
-        add(layout, "grid-template-columns", style.gridTemplateColumns);
-        add(layout, "grid-template-rows", style.gridTemplateRows);
-        add(layout, "grid-auto-columns", style.gridAutoColumns);
-        add(layout, "grid-auto-rows", style.gridAutoRows);
-        add(layout, "grid-auto-flow", style.gridAutoFlow);
-      } else {
-        add(root, "gap", style.gap);
-      }
+        const display = responsive(style.display, device) || (node.type === "grid" ? "grid" : "flex");
+        const direction = responsive(style.direction, device) || (node.type === "row" ? "row" : "column");
+        add(layout, "display", display);
+        add(layout, "flex-direction", direction);
+        add(layout, "justify-content", responsive(style.justifyContent, device) || "flex-start");
+        add(layout, "align-items", responsive(style.alignItems, device) || "stretch");
+        add(layout, "align-content", responsive(style.alignContent, device) || "stretch");
+        add(layout, "flex-wrap", responsive(style.flexWrap, device) || "nowrap");
+        add(layout, "gap", responsive(style.gap, device) || "0px");
+        add(layout, "row-gap", responsive(style.rowGap, device) || responsive(style.gap, device) || "0px");
+        add(layout, "column-gap", responsive(style.columnGap, device) || responsive(style.gap, device) || "0px");
+        add(layout, "grid-template-columns", responsive(style.gridTemplateColumns, device) || (display === "grid" ? `repeat(${Math.max(1, Math.min(6, children.length || 2))}, minmax(0, 1fr))` : "none"));
+        add(layout, "grid-template-rows", responsive(style.gridTemplateRows, device) || "auto");
+        add(layout, "grid-auto-columns", responsive(style.gridAutoColumns, device) || "auto");
+        add(layout, "grid-auto-rows", responsive(style.gridAutoRows, device) || "auto");
+        add(layout, "grid-auto-flow", responsive(style.gridAutoFlow, device) || "row");
 
-      const widthMode = node.advanced?.widthMode;
-      const deviceWidthMode =
-        typeof widthMode === "string"
-          ? widthMode
-          : widthMode?.[device] ?? widthMode?.desktop;
-      if (deviceWidthMode === "inline") root.set("width", "fit-content");
-      else if (deviceWidthMode === "full") root.set("width", "100%");
-      else if (deviceWidthMode === "default") root.set("width", "auto");
-      else if (deviceWidthMode === "custom") add(root, "width", style.width);
-
-      // Section boxed/full-width settings are responsive Layout controls.
-      if (node.type === "section") {
-        const propOverrides = getResponsiveBuilderPropOverrides(node, device);
-        if (Object.prototype.hasOwnProperty.call(propOverrides, "contentWidth")) {
-          const contentWidth = propOverrides.contentWidth;
-          if (contentWidth === "full") {
-            add(layout, "max-width", "none");
-          } else {
-            const width = propOverrides.containerWidth ?? node.props.containerWidth ?? "1200px";
-            add(layout, "max-width", width);
-          }
-        } else if (Object.prototype.hasOwnProperty.call(propOverrides, "containerWidth")) {
-          add(layout, "max-width", propOverrides.containerWidth);
-        }
-        if (Object.prototype.hasOwnProperty.call(propOverrides, "contentWidth") ||
-            Object.prototype.hasOwnProperty.call(propOverrides, "containerWidth")) {
+        if (node.type === "section") {
+          const contentWidth = widgetProps.contentWidth || "boxed";
+          const containerWidth = widgetProps.containerWidth || "1200px";
           add(layout, "width", "100%");
+          add(layout, "max-width", contentWidth === "full" ? "none" : containerWidth);
           add(layout, "margin-left", "auto");
           add(layout, "margin-right", "auto");
         }
+
+        // Layout children fill the row equally when their parent is a flex row.
+        // Explicit width / flex sizing remains authoritative.
+        const childRules: string[] = [];
+        if (display === "flex" && direction.startsWith("row")) {
+          for (const child of children) {
+            if (!layoutTypes.has(child.type)) continue;
+            const childStyle = resolveBuilderStyles(child.styles, device);
+            const childWidthMode = child.advanced?.widthMode;
+            const resolvedWidthMode = typeof childWidthMode === "string"
+              ? childWidthMode
+              : childWidthMode?.[device] ?? childWidthMode?.desktop ?? "default";
+            const childWidth = responsive(childStyle.width, device);
+            const childFlexBasis = responsive(childStyle.flexBasis, device);
+            const childFlexGrow = responsive(childStyle.flexGrow, device);
+            const widthText = String(childWidth || "").trim();
+            const isDefaultFullWidth = widthText === "100%" && resolvedWidthMode === "default";
+            const hasExplicitSize = Boolean(
+              (childWidth && !isDefaultFullWidth) ||
+              childFlexBasis ||
+              Number(childFlexGrow || 0) > 0 ||
+              resolvedWidthMode === "custom" ||
+              resolvedWidthMode === "full" ||
+              resolvedWidthMode === "inline",
+            );
+            if (!hasExplicitSize) {
+              childRules.push(
+                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{flex:1 1 0%;min-width:0;max-width:100%;box-sizing:border-box}`,
+              );
+            }
+          }
+        } else if (display === "flex" && direction.startsWith("column")) {
+          for (const child of children) {
+            if (!layoutTypes.has(child.type)) continue;
+            const childStyle = resolveBuilderStyles(child.styles, device);
+            const childWidthMode = child.advanced?.widthMode;
+            const resolvedWidthMode = typeof childWidthMode === "string"
+              ? childWidthMode
+              : childWidthMode?.[device] ?? childWidthMode?.desktop ?? "default";
+            const resolvedChildWidth = responsive(childStyle.width, device);
+            const isDefaultColumnWidth =
+              !resolvedChildWidth || String(resolvedChildWidth).trim() === "100%";
+            if (isDefaultColumnWidth && resolvedWidthMode === "default") {
+              childRules.push(
+                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%;min-width:0;box-sizing:border-box}`,
+              );
+            }
+          }
+        } else if (display === "grid") {
+          for (const child of children) {
+            if (layoutTypes.has(child.type)) {
+              childRules.push(
+                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%;min-width:0;box-sizing:border-box}`,
+              );
+            }
+          }
+        }
+        if (childRules.length) {
+          const selectorText = childRules.join("");
+          if (device === "desktop") rules.push(selectorText);
+          else {
+            const media = device === "tablet"
+              ? "@media (min-width: 768px) and (max-width: 1024px)"
+              : "@media (max-width: 767px)";
+            rules.push(`${media}{${selectorText}}`);
+          }
+        }
       }
 
-      // Widget-specific visual settings (Content values remain shared).
-      for (const [key, value] of Object.entries(getResponsiveBuilderPropOverrides(node, device))) {
+      // Device-specific visual widget settings. Content fields remain shared.
+      const responsivePropValues = device === "desktop"
+        ? {}
+        : getResponsiveBuilderPropOverrides(node, device);
+      for (const [key, value] of Object.entries(responsivePropValues)) {
         if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key)) continue;
-        const pixelProperties = new Set([
-          "size",
-          "iconSize",
-          "buttonSize",
-          "mobileIconSize",
-        ]);
-        const normalizedValue =
-          typeof value === "number" && pixelProperties.has(key)
-            ? `${value}px`
-            : value;
-        const cssValue = responsiveCssValue(normalizedValue);
-        if (cssValue !== undefined) root.set(`--builder-prop-${key}`, cssValue);
+        const pixelProperties = new Set(["size", "iconSize", "buttonSize", "mobileIconSize"]);
+        const normalizedValue = typeof value === "number" && pixelProperties.has(key) ? `${value}px` : value;
+        add(root, `--builder-prop-${key}`, normalizedValue);
       }
 
-      // Device visibility is independent. If Desktop is hidden but this device
-      // is visible, explicitly restore the node's normal display value.
-      if (device === "tablet" && node.advanced?.hideOnTablet) {
-        root.set("display", "none");
-      } else if (device === "mobile" && node.advanced?.hideOnMobile) {
-        root.set("display", "none");
-      } else if (node.advanced?.hideOnDesktop) {
-        root.set("display", layoutTypes.has(node.type) ? "block" : responsive(style.display, device) || "block");
+      if (node.type === "button" && Object.prototype.hasOwnProperty.call(responsivePropValues, "iconPosition")) {
+        add(root, "display", "inline-flex");
+        add(root, "flex-direction", responsivePropValues.iconPosition === "after" ? "row-reverse" : "row");
+        add(root, "align-items", "center");
+      }
+      if (node.type === "icon-box" && Object.prototype.hasOwnProperty.call(responsivePropValues, "iconPosition")) {
+        const position = responsivePropValues.iconPosition;
+        add(root, "display", "flex");
+        add(root, "flex-direction", position === "left" ? "row" : position === "right" ? "row-reverse" : position === "bottom" ? "column-reverse" : "column");
+        add(root, "align-items", "center");
+      }
+      if (node.type === "social-icons" && Object.prototype.hasOwnProperty.call(responsivePropValues, "shape")) {
+        const selectedShape = responsivePropValues.shape;
+        add(root, "--builder-prop-shape-radius", selectedShape === "square" ? "4px" : selectedShape === "rounded" ? "10px" : "999px");
       }
 
-      if (style.colorHover !== undefined) add(hover, "color", style.colorHover);
+      if (node.type === "icon-list") {
+        if (Object.prototype.hasOwnProperty.call(responsivePropValues, "layout")) {
+          const selectedLayout = responsivePropValues.layout;
+          if (selectedLayout === "grid") {
+            add(root, "display", "grid");
+            add(root, "grid-template-columns", `repeat(${Number(widgetProps.columns || 2)}, minmax(0, 1fr))`);
+          } else if (selectedLayout === "inline") {
+            add(root, "display", "flex");
+            add(root, "flex-direction", "row");
+            add(root, "flex-wrap", "wrap");
+            add(root, "grid-template-columns", "none");
+          } else {
+            add(root, "display", "flex");
+            add(root, "flex-direction", "column");
+            add(root, "flex-wrap", "nowrap");
+            add(root, "grid-template-columns", "none");
+          }
+        } else if (Object.prototype.hasOwnProperty.call(responsivePropValues, "columns") && widgetProps.layout === "grid") {
+          add(root, "grid-template-columns", `repeat(${Number(widgetProps.columns || 2)}, minmax(0, 1fr))`);
+        }
+        if (Object.prototype.hasOwnProperty.call(responsivePropValues, "divider")) {
+          const showDivider = Boolean(widgetProps.divider);
+          const dividerColor = cssValue(widgetProps.dividerColor) || "#e2e8f0";
+          add(root, "--builder-prop-divider-border", showDivider ? `1px solid ${dividerColor}` : "none");
+          add(root, "--builder-prop-divider-padding", showDivider ? "8px" : "0px");
+        }
+      }
+
+      const hidden =
+        (device === "desktop" && node.advanced?.hideOnDesktop) ||
+        (device === "tablet" && node.advanced?.hideOnTablet) ||
+        (device === "mobile" && node.advanced?.hideOnMobile);
+      if (hidden) add(root, "display", "none");
+      else if (node.advanced?.hideOnDesktop) add(root, "display", layoutTypes.has(node.type) ? "block" : (rawNodeStyle.display as string) || "block");
+
+      const hoverDeclarations = new Map<string, string>();
+      const hoverColor = responsive(style.colorHover, device);
+      if (hoverColor !== undefined) add(hoverDeclarations, "--builder-style-color", hoverColor);
       if (style.backgroundHover) {
         const hoverBackground = backgroundStyle(style.backgroundHover, device);
-        if (hoverBackground.backgroundColor !== undefined) add(hover, "background-color", hoverBackground.backgroundColor);
-        if (hoverBackground.backgroundImage !== undefined) add(hover, "background-image", hoverBackground.backgroundImage);
+        for (const [property, value] of Object.entries(hoverBackground)) {
+          add(hoverDeclarations, `--builder-style-${cssPropertyName(property)}`, value);
+        }
       }
       if (style.borderHover) {
-        add(hover, "border-color", style.borderHover.color);
-        add(hover, "border-width", style.borderHover.width);
-        add(hover, "border-radius", style.borderHover.radius);
-        add(hover, "border-style", style.borderHover.style);
+        add(hoverDeclarations, "--builder-style-border-color", responsive(style.borderHover.color, device));
+        add(hoverDeclarations, "--builder-style-border-width", responsive(style.borderHover.width, device));
+        add(hoverDeclarations, "--builder-style-border-radius", responsive(style.borderHover.radius, device));
+        add(hoverDeclarations, "--builder-style-border-style", style.borderHover.style);
       }
-      if (style.boxShadowHover !== undefined) add(hover, "box-shadow", style.boxShadowHover);
-      if (style.opacityHover !== undefined) add(hover, "opacity", style.opacityHover);
+      if (style.boxShadowHover !== undefined) add(hoverDeclarations, "--builder-style-box-shadow", style.boxShadowHover);
+      if (style.opacityHover !== undefined) add(hoverDeclarations, "--builder-style-opacity", style.opacityHover);
 
-      const media = device === "tablet"
-        ? "@media (min-width: 768px) and (max-width: 1024px)"
-        : "@media (max-width: 767px)";
-      const selectors: string[] = [];
+      const selectorRules: string[] = [];
       if (root.size) {
-        selectors.push(`${selector}{${[...root.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
-      }
-      if (hover.size) {
-        selectors.push(`${selector}:hover{${[...hover.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
+        selectorRules.push(`${selector}{${[...root.entries()].map(([key, value]) => `${key.startsWith("--") ? key : `--builder-style-${key}`}:${value}`).join(";")}}`);
       }
       if (layout.size) {
-        selectors.push(`[data-builder-layout-children=${JSON.stringify(node.id)}]{${[...layout.entries()].map(([key, value]) => `${key}:${value}!important`).join(";")}}`);
+        selectorRules.push(`${childrenSelector}{${[...layout.entries()].map(([key, value]) => `--builder-layout-${key}:${value}`).join(";")}}`);
+      }
+      if (hoverDeclarations.size) {
+        selectorRules.push(`${selector}:hover{${[...hoverDeclarations.entries()].map(([key, value]) => `${key}:${value}`).join(";")}}`);
       }
 
-      if (selectors.length) rules.push(`${media}{${selectors.join("")}}`);
+      if (selectorRules.length) {
+        const selectorText = selectorRules.join("");
+        if (device === "desktop") rules.push(selectorText);
+        else {
+          const media = device === "tablet"
+            ? "@media (min-width: 768px) and (max-width: 1024px)"
+            : "@media (max-width: 767px)";
+          rules.push(`${media}{${selectorText}}`);
+        }
+      }
     }
 
     node.children?.forEach(collect);
@@ -599,50 +638,6 @@ function transformCss(transform: BuilderStyle["transformSettings"]): string | un
   ].join(" ");
 }
 
-function hoverCss(nodes: BuilderNode[]): string {
-  const rules: string[] = [];
-  const visit = (node: BuilderNode) => {
-    const declarations: string[] = [];
-    if (node.styles.opacityHover !== undefined) {
-      declarations.push(`opacity:${node.styles.opacityHover}`);
-    }
-    const hoverColor = responsive(node.styles.colorHover);
-    if (hoverColor) {
-      declarations.push(`color:${hoverColor}`);
-    }
-    for (const [property, value] of Object.entries(
-      backgroundStyle(node.styles.backgroundHover),
-    )) {
-      if (value !== undefined) {
-        declarations.push(
-          `${property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}:${String(value)}`,
-        );
-      }
-    }
-    const border = node.styles.borderHover;
-    if (border?.style && border.style !== "none") {
-      declarations.push(
-        `border:${border.width || "1px"} ${border.style} ${responsive(border.color) || "#dbe3ed"}`,
-      );
-    }
-    if (border?.radius?.desktop) {
-      declarations.push(`border-radius:${border.radius.desktop}`);
-    }
-    if (node.styles.boxShadowHover) {
-      declarations.push(`box-shadow:${node.styles.boxShadowHover}`);
-    }
-    const transform = transformCss(node.styles.transformSettingsHover);
-    if (transform) declarations.push(`transform:${transform}`);
-    if (declarations.length) {
-      rules.push(
-        `[data-builder-node-id=${JSON.stringify(node.id)}]:hover{${declarations.map((declaration) => `${declaration}!important`).join(";")}}`,
-      );
-    }
-    node.children?.forEach(visit);
-  };
-  nodes.forEach(visit);
-  return rules.join("\n");
-}
 
 function motionCss(nodes: BuilderNode[]): string {
   const animations = new Set<string>();
@@ -671,12 +666,12 @@ function motionCss(nodes: BuilderNode[]): string {
     .join("\n");
 }
 
-function customCss(nodes: BuilderNode[]): string {
+function customCss(nodes: BuilderNode[], documentSelector: string): string {
   const rules: string[] = [];
   const collect = (node: BuilderNode) => {
     const css = node.advanced?.customCss || node.styles.customCss;
     if (typeof css === "string" && css.trim()) {
-      const selector = `[data-builder-node-id=${JSON.stringify(node.id)}]`;
+      const selector = `${documentSelector} [data-builder-node-id=${JSON.stringify(node.id)}]`;
       rules.push(css.replace(/\bselector\b/g, selector).replace(/</g, "\\3C "));
     }
     node.children?.forEach(collect);
@@ -751,10 +746,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
 
   if (["section", "container", "row", "column", "grid"].includes(node.type)) {
     const Tag = layoutTag(node);
-    const shellStyle = { ...style };
-    if (shellStyle.display !== "none") shellStyle.display = "block";
     return (
-      <Tag key={node.id} {...common} style={shellStyle}>
+      <Tag key={node.id} {...common} style={style}>
         <div
           data-builder-layout-children={node.id}
           style={layoutChildrenStyle(node)}
@@ -787,11 +780,11 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const parts: ReactNode[] = [];
     if (props.showDate !== false && postContext?.publishedAt) parts.push(<time key="date" dateTime={postContext.publishedAt.toISOString()}>{postContext.publishedAt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</time>);
     if (props.showCategories !== false && postContext?.categories?.length) parts.push(<span key="categories">{postContext.categories.map((category) => category.name).join(", ")}</span>);
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexWrap: "wrap", gap: 10 }}>{parts.length ? parts : stringProp("fallbackText", "Post metadata")}</div>;
+    return <div key={node.id} {...common} style={{ ...style, display: "var(--builder-style-display, flex)", flexWrap: "var(--builder-style-flex-wrap, wrap)" as CSSProperties["flexWrap"], gap: "var(--builder-style-gap, 10px)" }}>{parts.length ? parts : stringProp("fallbackText", "Post metadata")}</div>;
   }
   if (node.type === "author-box") {
     const authorImage = imageUrl(props.authorImage);
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", gap: 14, alignItems: "center" }}>{props.showImage !== false && authorImage ? <img src={authorImage} alt={stringProp("authorName", "Author")} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }} /> : null}<div>{props.showName !== false ? <strong>{stringProp("authorName", "Author")}</strong> : null}{stringProp("authorRole") ? <div>{stringProp("authorRole")}</div> : null}{props.showBio !== false && stringProp("authorBio") ? <p>{stringProp("authorBio")}</p> : null}</div></div>;
+    return <div key={node.id} {...common} style={{ ...style, display: "var(--builder-style-display, flex)", gap: "var(--builder-style-gap, 14px)", alignItems: "var(--builder-style-align-items, center)" }}>{props.showImage !== false && authorImage ? <img src={authorImage} alt={stringProp("authorName", "Author")} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }} /> : null}<div>{props.showName !== false ? <strong>{stringProp("authorName", "Author")}</strong> : null}{stringProp("authorRole") ? <div>{stringProp("authorRole")}</div> : null}{props.showBio !== false && stringProp("authorBio") ? <p>{stringProp("authorBio")}</p> : null}</div></div>;
   }
   if (node.type === "post-navigation" && postContext) {
     return <PublicPostNavigation key={node.id} postId={postContext.id} postTypeId={postContext.postTypeId} publishedAt={postContext.publishedAt} prefix={postUrlPrefix} showPrevious={props.showPrevious !== false} showNext={props.showNext !== false} previousText={stringProp("previousText", "Previous Post")} nextText={stringProp("nextText", "Next Post")} />;
@@ -823,7 +816,34 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       </a>
     ) : <Tag key={node.id} {...common}>{text(node)}</Tag>;
   }
-  if (node.type === "text") return <p key={node.id} {...common}>{text(node)}</p>;
+  if (node.type === "text") {
+    const richText = sanitizeHtml(stringProp("content"), {
+      allowedTags: [...sanitizeHtml.defaults.allowedTags, "h1", "h2", "h3", "h4", "h5", "h6", "img", "figure", "figcaption", "table", "thead", "tbody", "tr", "th", "td", "hr", "span"],
+      allowedAttributes: {
+        ...sanitizeHtml.defaults.allowedAttributes,
+        "*": ["class", "style", "title"],
+        a: ["href", "target", "rel", "title"],
+        img: ["src", "alt", "title", "width", "height", "loading"],
+        th: ["colspan", "rowspan"],
+        td: ["colspan", "rowspan"],
+      },
+      allowedStyles: {
+        "*": {
+          color: [/^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i],
+          "background-color": [/^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\)|[a-z]{3,24}|transparent)$/i],
+          "text-align": [/^(left|right|center|justify)$/i],
+          "font-size": [/^\d+(?:\.\d+)?(?:px|pt|em|rem|%)$/i],
+          "font-weight": [/^(normal|bold|[1-9]00)$/i],
+          "font-style": [/^(normal|italic|oblique)$/i],
+          "text-decoration": [/^(none|underline|line-through)$/i],
+          "line-height": [/^\d+(?:\.\d+)?(?:px|em|rem|%)?$/i],
+        },
+      },
+      allowedSchemes: ["http", "https", "mailto", "tel"],
+      allowProtocolRelative: false,
+    });
+    return <div key={node.id} {...common} dangerouslySetInnerHTML={{ __html: richText }} />;
+  }
   if (node.type === "button") {
     const target = props.target === "_blank" ? "_blank" : undefined;
     const ButtonIcon = themeIcons[stringProp("iconName")];
@@ -833,6 +853,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     ) : ButtonIcon ? (
       <ButtonIcon size={16} />
     ) : stringProp("icon") || null;
+    const initialIconPosition = stringProp("iconPosition", "before");
     return (
       <a
         key={node.id}
@@ -842,9 +863,11 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         target={target}
         rel={target ? "noopener noreferrer" : undefined}
         style={{
-          display: "inline-flex",
+          display: "var(--builder-style-display, inline-flex)",
+          flexDirection: ("var(--builder-style-flex-direction, " + (initialIconPosition === "after" ? "row-reverse" : "row") + ")") as CSSProperties["flexDirection"],
           alignItems: "center",
           justifyContent: "center",
+          gap: styleProp("iconGap", "8px"),
           width: style.width || "fit-content",
           minWidth: 0,
           maxWidth: "100%",
@@ -861,9 +884,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
           ...style,
         }}
       >
-        {props.iconPosition === "before" ? icon : null}
-        {text(node)}
-        {props.iconPosition === "after" ? icon : null}
+        {icon ? <span data-builder-button-icon="true" style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto" }}>{icon}</span> : null}
+        <span data-builder-button-text="true">{text(node)}</span>
       </a>
     );
   }
@@ -875,15 +897,18 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       : "cover";
     const img = <img src={src} alt={stringProp("alt")} title={stringProp("title") || undefined} style={{ ...style, width: style.width || (node.type === "site-logo" ? stringProp("width", "180px") : undefined), height: style.height || (node.type === "site-logo" ? stringProp("height", "auto") : undefined), maxWidth: "100%", objectFit: styleProp("objectFit", String(objectFit || "cover")) as CSSProperties["objectFit"], objectPosition: styleProp("objectPosition", stringProp("objectPosition", "center center")) }} />;
     const target = props.linkTarget === "_blank" ? "_blank" : undefined;
-    return <figure key={node.id} {...common} style={{ ...style, margin: 0, padding: 0, textAlign: styleProp("alignment", stringProp("alignment", "left")) as CSSProperties["textAlign"] }}>{props.link ? <a href={link(props.link)} target={target} rel={target ? "noopener noreferrer" : undefined}>{img}</a> : img}{props.caption ? <figcaption>{stringProp("caption")}</figcaption> : null}</figure>;
+    return <figure key={node.id} {...common} style={{ ...style, margin: style.margin || 0, padding: style.padding || 0, textAlign: styleProp("alignment", stringProp("alignment", "left")) as CSSProperties["textAlign"] }}>{props.link ? <a href={link(props.link)} target={target} rel={target ? "noopener noreferrer" : undefined}>{img}</a> : img}{props.caption ? <figcaption>{stringProp("caption")}</figcaption> : null}</figure>;
   }
   if (node.type === "icon") {
     const Icon = themeIcons[stringProp("iconName")];
     const src = imageUrl(props.iconImage || props.src);
-    const size = Math.max(8, Math.min(240, Number(props.size || 24)));
+    const symbol = typeof props.symbol === "string" ? props.symbol : "";
+    const sizeCss = styleProp("size", cssLength(props.size, "24px"));
+    const iconColor = styleProp("iconColor", stringProp("iconColor", stringProp("color", "#0c2f55")));
+    if (!src && !Icon && !symbol) return null;
     return (
-      <span key={node.id} {...common} style={{ ...style, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: styleProp("size", `${size}px`), color: styleProp("iconColor", stringProp("iconColor", stringProp("color", "#0c2f55"))) }}>
-        {src ? <img src={src} alt={stringProp("alt")} width={size} height={size} style={{ width: styleProp("size", `${size}px`), height: styleProp("size", `${size}px`), objectFit: "contain" }} /> : Icon ? <Icon size={size} style={{ width: styleProp("size", `${size}px`), height: styleProp("size", `${size}px`), color: styleProp("iconColor", stringProp("iconColor", "#0c2f55")) }} strokeWidth={Number(props.strokeWidth || 2)} /> : stringProp("symbol", "★")}
+      <span key={node.id} {...common} style={{ ...style, display: style.display || "inline-flex", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "center", width: style.width, height: style.height, fontSize: style.fontSize || sizeCss, color: style.color || iconColor }}>
+        {src ? <img src={src} alt={stringProp("alt")} style={{ width: sizeCss, height: sizeCss, objectFit: "contain" }} /> : Icon ? <Icon size={24} style={{ width: sizeCss, height: sizeCss, color: iconColor }} strokeWidth={Number(props.strokeWidth || 2)} /> : symbol}
       </span>
     );
   }
@@ -891,28 +916,100 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const position = stringProp("iconPosition", "top");
     const Icon = themeIcons[stringProp("iconName")];
     const iconSrc = imageUrl(props.iconImage);
-    const iconSize = Math.max(12, Math.min(160, Number(props.iconSize || 40)));
-    const responsiveIconSize = styleProp("iconSize", `${iconSize}px`);
+    const responsiveIconSize = styleProp("iconSize", cssLength(props.iconSize, "40px"));
     const responsiveIconColor = styleProp("iconColor", stringProp("iconColor", "#3984e8"));
-    const icon = iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, color: responsiveIconColor }} /> : <span style={{ fontSize: responsiveIconSize, color: responsiveIconColor }}>{stringProp("symbol", "★")}</span>;
+    const symbol = typeof props.symbol === "string" ? props.symbol : "";
+    const hasIcon = Boolean(iconSrc || Icon || symbol);
+    const icon = !hasIcon ? null : iconSrc ? <img src={iconSrc} alt="" style={{ width: responsiveIconSize, height: responsiveIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={40} style={{ width: responsiveIconSize, height: responsiveIconSize, color: responsiveIconColor }} /> : <span style={{ fontSize: responsiveIconSize, color: responsiveIconColor }}>{symbol}</span>;
     const content = <div><h3>{stringProp("title", "Feature Title")}</h3><p>{stringProp("description")}</p></div>;
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column", alignItems: position === "top" ? "center" : "flex-start", gap: 12 }}>{icon}{content}</div>;
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "var(--builder-style-display, flex)", flexDirection: (style.flexDirection || `var(--builder-style-flex-direction, ${position === "left" ? "row" : position === "right" ? "row-reverse" : position === "bottom" ? "column-reverse" : "column"})`) as CSSProperties["flexDirection"], alignItems: style.alignItems || "var(--builder-style-align-items, center)", justifyContent: style.justifyContent || "var(--builder-style-justify-content, flex-start)", flexWrap: (style.flexWrap || "var(--builder-style-flex-wrap, nowrap)") as CSSProperties["flexWrap"], gap: style.gap || styleProp("gap", cssLength(props.gap, "12px")) }}>{icon}{content}</div>;
   }
   if (node.type === "icon-list") {
     const items = Array.isArray(props.items) ? props.items : [];
-    const iconSize = Math.max(8, Math.min(80, Number(props.iconSize || 16)));
-    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: styleProp("itemSpacing", stringProp("itemSpacing", "12px")) }}>
-      {items.map((raw, index) => {
-        if (!raw || typeof raw !== "object") return null;
-        const item = raw as Record<string, unknown>;
-        const Icon = themeIcons[String(item.iconName || "Check")];
-        const iconSrc = imageUrl(item.iconImage);
-        const responsiveIconSize = styleProp("iconSize", `${iconSize}px`);
-        const content = <><span style={{ display: "inline-flex", flex: "0 0 auto", color: styleProp("iconColor", stringProp("iconColor", "#3984e8")) }}>{iconSrc ? <img src={iconSrc} alt="" width={iconSize} height={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize }} /> : Icon ? <Icon size={iconSize} style={{ width: responsiveIconSize, height: responsiveIconSize, color: styleProp("iconColor", stringProp("iconColor", "#3984e8")) }} /> : "✓"}</span><span>{String(item.text || item.label || `List item ${index + 1}`)}</span></>;
-        const href = safeUrl(item.url);
-        return <li key={String(item.id || index)} style={{ display: "flex", alignItems: "center", gap: 9, borderBottom: props.divider ? "1px solid #e2e8f0" : undefined, paddingBottom: props.divider ? 8 : undefined }}>{href && href !== "#" ? <a href={href} style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 9 }}>{content}</a> : content}</li>;
-      })}
-    </ul>;
+    const iconSizeCss = styleProp("iconSize", cssLength(props.iconSize, "16px"));
+    const listLayout = stringProp("layout", "list");
+    const listGap = styleProp("itemSpacing", stringProp("itemSpacing", "12px"));
+    const listColumns = Math.max(1, Math.min(6, Number(props.columns || 2)));
+    const listStyle: CSSProperties = {
+      ...style,
+      listStyle: "none",
+      padding: 0,
+      margin: 0,
+      display: `var(--builder-style-display, ${listLayout === "grid" ? "grid" : "flex"})`,
+      flexDirection: `var(--builder-style-flex-direction, ${listLayout === "inline" ? "row" : "column"})` as CSSProperties["flexDirection"],
+      flexWrap: `var(--builder-style-flex-wrap, ${listLayout === "inline" ? "wrap" : "nowrap"})` as CSSProperties["flexWrap"],
+      gridTemplateColumns: `var(--builder-style-grid-template-columns, ${listLayout === "grid" ? `repeat(var(--builder-prop-columns, ${listColumns}), minmax(0, 1fr))` : "none"})`,
+      gap: `var(--builder-style-gap, ${listGap})`,
+    };
+
+    return (
+      <ul key={node.id} {...common} style={listStyle}>
+        {items.map((raw, index) => {
+          if (!raw || typeof raw !== "object") return null;
+          const item = raw as Record<string, unknown>;
+          const iconName = typeof item.iconName === "string" ? item.iconName : "Check";
+          const Icon = iconName ? themeIcons[iconName] : null;
+          const iconSrc = imageUrl(item.iconImage);
+          const hasItemIcon = Boolean(iconSrc || Icon);
+          const responsiveIconSize = iconSizeCss;
+          const iconColor = styleProp("iconColor", stringProp("iconColor", "#3984e8"));
+          const itemText = String(item.text || item.label || `List item ${index + 1}`);
+          const content = (
+            <>
+              {hasItemIcon ? (
+                <span style={{ display: "inline-flex", flex: "0 0 auto", color: iconColor }}>
+                  {iconSrc ? (
+                    <img src={iconSrc} alt="" style={{ width: responsiveIconSize, height: responsiveIconSize, objectFit: "contain" }} />
+                  ) : Icon ? (
+                    <Icon size={16} style={{ width: responsiveIconSize, height: responsiveIconSize, color: iconColor }} />
+                  ) : null}
+                </span>
+              ) : null}
+              <span>{itemText}</span>
+            </>
+          );
+          const isDynamic = item.linkType === "dynamic";
+          const dynamicDestination = item.dynamicLink === "homepage" ? "homepage" : "current-page";
+          const href = safeUrl(item.url);
+          const target = item.linkTarget === "_blank" ? "_blank" : undefined;
+          const itemContent = isDynamic ? (
+            <BuilderDynamicLink destination={dynamicDestination}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px"), color: styleProp("linkColor", "inherit"), textDecoration: "none" }}>
+                {content}
+              </span>
+            </BuilderDynamicLink>
+          ) : href && href !== "#" ? (
+            <a
+              href={href}
+              target={target}
+              rel={target ? "noopener noreferrer" : undefined}
+              style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px"), color: styleProp("linkColor", "inherit"), textDecoration: "none" }}
+            >
+              {content}
+            </a>
+          ) : (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px") }}>{content}</span>
+          );
+
+          return (
+            <li
+              key={String(item.id || index)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                minWidth: 0,
+                gap: styleProp("iconGap", "9px"),
+                color: styleProp("textColor", "inherit"),
+                borderBottom: props.divider ? `1px solid ${styleProp("dividerColor", "#e2e8f0")}` : undefined,
+                paddingBottom: props.divider ? 8 : undefined,
+              }}
+            >
+              {itemContent}
+            </li>
+          );
+        })}
+      </ul>
+    );
   }
   if (node.type === "image-box") {
     const src = imageUrl(props.image);
@@ -931,13 +1028,13 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       />
     ) : null;
     const target = props.linkTarget === "_blank" ? "_blank" : undefined;
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: position === "left" ? "row" : position === "right" ? "row-reverse" : "column", alignItems: "center", gap: 12 }}>
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || (position === "left" ? "row" : position === "right" ? "row-reverse" : "column"), alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "nowrap", gap: style.gap || "12px" }}>
       {img ? (props.link ? <a href={link(props.link)} target={target} rel={target ? "noopener noreferrer" : undefined}>{img}</a> : img) : null}
       <div><h3>{stringProp("title")}</h3><p>{stringProp("description")}</p>{props.caption ? <small>{stringProp("caption")}</small> : null}</div>
     </div>;
   }
   if (node.type === "divider") return <hr key={node.id} {...common} style={{ ...style, border: 0, borderTop: `${stringProp("thickness", "1px")} ${stringProp("style", "solid")} ${stringProp("color", "#e2e8f0")}` }} />;
-  if (node.type === "spacer") return <div key={node.id} {...common} style={{ ...style, minHeight: stringProp("height", "40px") }} aria-hidden="true" />;
+  if (node.type === "spacer") return <div key={node.id} {...common} style={{ ...style, minHeight: style.minHeight || style.height || stringProp("height", "40px") }} aria-hidden="true" />;
   if (node.type === "video") {
     const src = safeUrl(props.url, true);
     return src ? <video key={node.id} {...common} src={src} poster={imageUrl(props.poster) || undefined} controls={props.controls !== false} autoPlay={Boolean(props.autoplay)} muted={Boolean(props.muted)} loop={Boolean(props.loop)} playsInline /> : null;
@@ -952,28 +1049,61 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       <PublicNavigationMenu
         key={node.id}
         items={items as PublicNavigationMenuItem[]}
-        style={{ ...style, width: style.width || "max-content" }}
+        style={{ ...style, width: "var(--builder-style-width, 100%)" as CSSProperties["width"] }}
         nodeId={node.id}
         id={typeof node.advanced?.cssId === "string" ? node.advanced.cssId : undefined}
         className={className}
         orientation={stringProp("orientation", "horizontal")}
         alignment={stringProp("alignment", "left")}
+        alignmentResponsive={(() => {
+          const responsive = props.__responsive && typeof props.__responsive === "object"
+            ? props.__responsive as Record<string, Record<string, unknown>>
+            : {};
+          return {
+            tablet: typeof responsive.tablet?.alignment === "string" ? responsive.tablet.alignment : undefined,
+            mobile: typeof responsive.mobile?.alignment === "string" ? responsive.mobile.alignment : undefined,
+          };
+        })()}
+        responsiveSettings={(() => {
+          const responsive = props.__responsive && typeof props.__responsive === "object"
+            ? props.__responsive as Record<string, Record<string, unknown>>
+            : {};
+          return { tablet: responsive.tablet, mobile: responsive.mobile };
+        })()}
         mobileToggle={props.mobileToggle !== false}
-        mobileBreakpoint={Number(props.mobileBreakpoint || 767)}
+        mobileBreakpoint={Number(props.mobileBreakpoint || 1024)}
         mobileLayout={stringProp("mobileLayout", "slide-in")}
         mobilePosition={stringProp("mobilePosition", "right")}
-        mobileWidth={stringProp("mobileWidth", "320px")}
+        mobileWidth={styleProp("mobileWidth", cssLength(props.mobileWidth, "320px"))}
         openIcon={stringProp("openIcon", "Menu")}
-        closeIcon={stringProp("closeIcon")}
-        iconSize={Number(props.mobileIconSize || 24)}
+        closeIcon={stringProp("closeIcon", "X")}
+        iconSize={styleProp("mobileIconSize", cssLength(props.mobileIconSize, "24px"))}
         itemPadding={stringProp("itemPadding")}
         itemIconName={stringProp("itemIconName")}
         iconColor={styleProp("iconColor", stringProp("iconColor", "#0c2f55"))}
         menuId={stringProp("menuId")}
         menuLocation={stringProp("menuLocation", "HEADER")}
         menuItemStyles={props.menuItemStyles as import("./PublicNavigationMenu").ResponsiveMenuItemStyles}
-        mobilePanelBackground={styleProp("mobilePanelBackground", stringProp("mobilePanelBackground", "#ffffff"))}
-        mobilePanelColor={styleProp("mobilePanelColor", stringProp("mobilePanelColor", "#1f2937"))}
+        mobilePanelBackground={stringProp("mobilePanelBackground", "#ffffff")}
+        mobilePanelBackgroundType={stringProp("mobilePanelBackgroundType", props.mobilePanelGradient && typeof props.mobilePanelGradient === "object" ? "gradient" : "classic")}
+        mobilePanelGradient={props.mobilePanelGradient && typeof props.mobilePanelGradient === "object" ? props.mobilePanelGradient as { angle?: number; color1?: string; color2?: string } : undefined}
+        mobilePanelColor={stringProp("mobilePanelColor", "#1f2937")}
+        mobilePanelIconColor={stringProp("mobilePanelIconColor", "#1f2937")}
+        mobileOverlayColor={stringProp("mobileOverlayColor", "rgba(15, 23, 42, 0.48)")}
+        toggleHoverIconColor={stringProp("toggleHoverIconColor", "#3984e8")}
+        toggleBackgroundColor={stringProp("toggleBackgroundColor", "transparent")}
+        toggleHoverBackgroundColor={stringProp("toggleHoverBackgroundColor", "transparent")}
+        closeIconColor={stringProp("closeIconColor", "#0c2f55")}
+        closeIconHoverColor={stringProp("closeIconHoverColor", "#3984e8")}
+        mobileLogo={stringProp("mobileLogo")}
+        mobileLogoAlt={stringProp("mobileLogoAlt", "Site logo")}
+        mobileLogoLinkType={stringProp("mobileLogoLinkType", "homepage")}
+        mobileLogoLink={stringProp("mobileLogoLink", "/")}
+        dropdownOpenAs={stringProp("dropdownOpenAs", "hover")}
+        submenuIndicator={stringProp("submenuIndicator", "ChevronDown")}
+        submenuClickArea={stringProp("submenuClickArea", "icon")}
+        closeOnAnchorClick={props.closeOnAnchorClick !== false}
+        onePage={Boolean(props.onePage)}
       />
     );
   }
@@ -990,11 +1120,15 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         action="/search"
         style={{
           ...style,
-          display: "flex",
+          display: style.display || "flex",
+          flexDirection: style.flexDirection || "row",
+          alignItems: style.alignItems || "center",
+          justifyContent: style.justifyContent || "flex-start",
+          flexWrap: style.flexWrap || "nowrap",
           width: style.width || "100%",
-          maxWidth: "100%",
+          maxWidth: style.maxWidth || "100%",
           minWidth: 0,
-          gap: 8,
+          gap: style.gap || "8px",
           boxSizing: "border-box",
         }}
       >
@@ -1056,7 +1190,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   if (node.type === "flip-box") return <details key={node.id} {...common} style={{ ...style, border: "1px solid #e2e8f0", borderRadius: 10, padding: 18 }}><summary style={{ cursor: "pointer", listStyle: "none" }}><h3>{stringProp("frontTitle", "Front Title")}</h3><p>{stringProp("frontDescription")}</p><span>{stringProp("flipHint", "Click to view more")}</span></summary><div style={{ paddingTop: 14 }}><h3>{stringProp("backTitle", "Back Title")}</h3><p>{stringProp("backDescription")}</p>{stringProp("backButtonUrl") ? <a href={link(props.backButtonUrl)}>{stringProp("backButtonText", "Learn More")}</a> : null}</div></details>;
   if (node.type === "countdown") return <div key={node.id} {...common}><PublicCountdownWidget date={stringProp("date")} showDays={props.showDays !== false} showHours={props.showHours !== false} showMinutes={props.showMinutes !== false} showSeconds={props.showSeconds !== false} expiredText={stringProp("expiredText", "The offer has ended.")} numberColor={styleProp("numberColor", stringProp("numberColor", "#ffffff"))} labelColor={styleProp("labelColor", stringProp("labelColor", "#ffffff"))} boxBackground={styleProp("boxBackground", stringProp("boxBackground", "#0c2f55"))} boxRadius={styleProp("boxRadius", stringProp("boxRadius", "8px"))} style={{ width: "100%", minWidth: 0 }} /></div>;
   if (node.type === "animated-headline") return <div key={node.id} {...common}><PublicAnimatedHeadline beforeText={stringProp("beforeText")} animatedText={Array.isArray(props.animatedText) ? props.animatedText.filter((item): item is string => typeof item === "string") : []} afterText={stringProp("afterText")} animation={stringProp("animation", "typing")} interval={Number(props.interval || 2400)} style={{ width: "100%", minWidth: 0 }} /></div>;
-  if (node.type === "share-buttons") return <div key={node.id} {...common}><PublicShareButtons networks={Array.isArray(props.networks) ? props.networks.filter((item): item is string => typeof item === "string") : undefined} showLabels={Boolean(props.showLabels)} buttonSize={Number(props.buttonSize || 40)} iconSize={Number(props.iconSize || 18)} shape={stringProp("shape", "circle")} iconColor={styleProp("iconColor", stringProp("iconColor", "#ffffff"))} backgroundColor={styleProp("iconBackground", stringProp("iconBackground", stringProp("backgroundColor", "#0c2f55")))} buttonSizeCss={styleProp("buttonSize", `${Number(props.buttonSize || 40)}px`)} iconSizeCss={styleProp("iconSize", `${Number(props.iconSize || 18)}px`)} style={{ width: "100%", minWidth: 0 }} /></div>;
+  if (node.type === "share-buttons") return <div key={node.id} {...common}><PublicShareButtons networks={Array.isArray(props.networks) ? props.networks.filter((item): item is string => typeof item === "string") : undefined} showLabels={Boolean(props.showLabels)} buttonSize={Number(props.buttonSize || 40)} iconSize={Number(props.iconSize || 18)} shape={stringProp("shape", "circle")} iconColor={styleProp("iconColor", stringProp("iconColor", "#ffffff"))} backgroundColor={styleProp("iconBackground", stringProp("iconBackground", stringProp("backgroundColor", "#0c2f55")))} buttonSizeCss={styleProp("buttonSize", cssLength(props.buttonSize, "40px"))} iconSizeCss={styleProp("iconSize", cssLength(props.iconSize, "18px"))} style={{ width: "100%", minWidth: 0 }} /></div>;
 
   if (node.type === "price-table") {
     const features = Array.isArray(props.features) ? props.features : [];
@@ -1064,7 +1198,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   }
   if (node.type === "price-list") {
     const items = Array.isArray(props.items) ? props.items : [];
-    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>{items.map((item, index) => { const entry = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <li key={String(entry.id || index)} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}><span><strong>{String(entry.title || (typeof item === "string" ? item : `Item ${index + 1}`))}</strong>{entry.description ? <small style={{ display: "block" }}>{String(entry.description)}</small> : null}</span>{entry.price ? <strong>{String(entry.price)}</strong> : null}</li>; })}</ul>;
+    return <ul key={node.id} {...common} style={{ ...style, listStyle: "none", padding: 0, margin: 0, display: style.display || "grid", gridTemplateColumns: style.gridTemplateColumns || "minmax(0, 1fr)", gap: style.gap || "10px" }}>{items.map((item, index) => { const entry = item && typeof item === "object" ? item as Record<string, unknown> : {}; return <li key={String(entry.id || index)} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}><span><strong>{String(entry.title || (typeof item === "string" ? item : `Item ${index + 1}`))}</strong>{entry.description ? <small style={{ display: "block" }}>{String(entry.description)}</small> : null}</span>{entry.price ? <strong>{String(entry.price)}</strong> : null}</li>; })}</ul>;
   }
   if (node.type === "call-to-action") return <section key={node.id} {...common}><h3>{stringProp("title")}</h3><p>{stringProp("description")}</p><a href={link(props.buttonUrl)}>{stringProp("buttonText", "Learn More")}</a></section>;
   if (node.type === "slides") {
@@ -1130,7 +1264,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   if (node.type === "image-carousel" || node.type === "media-carousel") {
     const raw = node.type === "image-carousel" ? props.images : node.type === "media-carousel" ? props.items : props.slides;
     const items = Array.isArray(raw) ? raw : [];
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", gap: 12, overflowX: "auto" }}>{items.map((item, index) => {
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "stretch", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "nowrap", gap: style.gap || "12px", overflowX: (style.overflow || "auto") as CSSProperties["overflowX"] }}>{items.map((item, index) => {
       const entry = typeof item === "string" ? { url: item } : item && typeof item === "object" ? item as Record<string, unknown> : {};
       const src = imageUrl(entry.url || entry.src);
       return src ? <img key={index} src={src} alt={typeof entry.alt === "string" ? entry.alt : ""} style={{ maxWidth: "100%", width: 240, objectFit: "cover" }} /> : null;
@@ -1138,25 +1272,26 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   }
   if (node.type === "social-icons") {
     const icons = Array.isArray(props.icons) ? props.icons : [];
-    const size = Math.max(12, Math.min(80, Number(props.iconSize || 22)));
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", alignItems: "center", flexWrap: "wrap", gap: stringProp("gap", "12px") }}>{icons.map((icon, index) => {
+    const sizeCss = styleProp("iconSize", cssLength(props.iconSize, "22px"));
+    const buttonSizeCss = styleProp("buttonSize", cssLength(props.buttonSize, "40px"));
+    const shape = stringProp("shape", "circle");
+    const radius = shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px";
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: style.gap || cssLength(props.gap, "12px") }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;
       const name = String(entry.iconName || entry.name || "");
       const SocialIcon = themeIcons[name];
       const iconImage = imageUrl(entry.iconImage);
       const label = String(entry.label || entry.name || "Social");
+      if (!SocialIcon && !iconImage) return null;
       const href = safeUrl(entry.url) || "#";
-      const buttonSize = Math.max(16, Math.min(120, Number(props.buttonSize || 40)));
-      const responsiveButtonSize = styleProp("buttonSize", `${buttonSize}px`);
-      const responsiveIconSize = styleProp("iconSize", `${size}px`);
       const responsiveIconColor = styleProp("iconColor", stringProp("iconColor", "#ffffff"));
-      return <a key={String(entry.id || index)} href={href} aria-label={label} title={label} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: responsiveButtonSize, height: responsiveButtonSize, borderRadius: stringProp("shape", "circle") === "square" ? 4 : stringProp("shape", "circle") === "rounded" ? 10 : 999, color: responsiveIconColor, background: styleProp("iconBackground", stringProp("iconBackground", "#0c2f55")), textDecoration: "none" }}>{iconImage ? <img src={iconImage} alt="" width={size} height={size} style={{ width: responsiveIconSize, height: responsiveIconSize }} /> : SocialIcon ? <SocialIcon size={size} style={{ width: responsiveIconSize, height: responsiveIconSize, color: responsiveIconColor }} /> : label.slice(0, 1).toUpperCase()}</a>;
+      return <a key={String(entry.id || index)} href={href} aria-label={label} title={label} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: buttonSizeCss, height: buttonSizeCss, flex: "0 0 auto", borderRadius: styleProp("shapeRadius", radius), color: responsiveIconColor, background: styleProp("iconBackground", stringProp("iconBackground", "#0c2f55")), textDecoration: "none" }}>{iconImage ? <img src={iconImage} alt="" style={{ width: sizeCss, height: sizeCss, objectFit: "contain" }} /> : SocialIcon ? <SocialIcon size={22} style={{ width: sizeCss, height: sizeCss, color: responsiveIconColor }} /> : null}</a>;
     })}</div>;
   }
   if (node.type === "google-maps") {
     const address = encodeURIComponent(stringProp("address"));
-    return address ? <iframe key={node.id} {...common} title="Map" loading="lazy" src={`https://www.google.com/maps?q=${address}&output=embed`} style={{ ...style, width: "100%", height: stringProp("height", "350px"), border: 0 }} /> : null;
+    return address ? <iframe key={node.id} {...common} title="Map" loading="lazy" src={`https://www.google.com/maps?q=${address}&output=embed`} style={{ ...style, width: style.width || "100%", height: style.height || stringProp("height", "350px"), border: 0 }} /> : null;
   }
   if (node.type === "login-form") return <div key={node.id} {...common}><PublicBuilderLoginForm usernameLabel={stringProp("usernameLabel", "Username or Email")} passwordLabel={stringProp("passwordLabel", "Password")} submitText={stringProp("submitText", "Log In")} rememberMe={props.rememberMe !== false} style={{ width: "100%", minWidth: 0 }} /></div>;
   if (node.type === "form") {
@@ -1184,10 +1319,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     return <div key={node.id} {...common}><PublicShortcodeWidget code={stringProp("shortcode")} /></div>;
   }
   if (node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel") {
-    return <div key={node.id} {...common}><PublicBuilderPosts postType={stringProp("postType", "post")} count={Number(props.count || 6)} columns={Number(props.columns || 3)} category={stringProp("category")} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "180px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} gap={styleProp("gap", stringProp("gap", "18px"))} layout={node.type === "loop-carousel" ? "carousel" : "grid"} style={{ width: "100%", minWidth: 0 }} /></div>;
+    return <div key={node.id} {...common}><PublicBuilderPosts postType={stringProp("postType", "post")} count={Number(props.count || 6)} columns={Number(props.columns || 3)} category={stringProp("category")} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "180px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} gap={styleProp("gap", stringProp("gap", "18px"))} layout={node.type === "loop-carousel" ? "carousel" : "grid"} style={{ ...style, width: style.width || "100%", minWidth: 0 }} /></div>;
   }
   if (node.type === "post-tabs") {
-    return <div key={node.id} {...common}><PublicBuilderPostTabs postType={stringProp("postType", "post")} tabs={Array.isArray(props.tabs) ? props.tabs as Array<{id?: string; title?: string; categorySlug?: string}> : []} count={Number(props.count || 4)} columns={Number(props.columns || 2)} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} tabNormalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))} tabNormalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))} tabActiveColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))} tabActiveBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))} tabHoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))} tabHoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))} gap={styleProp("gap", stringProp("gap", "16px"))} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "150px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} style={{ width: "100%", minWidth: 0 }} /></div>;
+    return <div key={node.id} {...common}><PublicBuilderPostTabs postType={stringProp("postType", "post")} tabs={Array.isArray(props.tabs) ? props.tabs as Array<{id?: string; title?: string; categorySlug?: string}> : []} count={Number(props.count || 4)} columns={Number(props.columns || 2)} orderBy={stringProp("orderBy", "date")} order={stringProp("order", "desc")} showImage={props.showImage !== false} showTitle={props.showTitle !== false} showExcerpt={props.showExcerpt !== false} showDate={props.showDate !== false} showReadMore={props.showReadMore !== false} readMoreText={stringProp("readMoreText", "Read More")} tabNormalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))} tabNormalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))} tabActiveColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))} tabActiveBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))} tabHoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))} tabHoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))} gap={styleProp("gap", stringProp("gap", "16px"))} imageHeight={styleProp("imageHeight", stringProp("imageHeight", "150px"))} cardBackground={styleProp("cardBackground", stringProp("cardBackground", "#ffffff"))} cardBorderColor={styleProp("cardBorderColor", stringProp("cardBorderColor", "#e2e8f0"))} cardRadius={styleProp("cardRadius", stringProp("cardRadius", "8px"))} style={{ ...style, width: style.width || "100%", minWidth: 0 }} /></div>;
   }
 
   return <div key={node.id} {...common}>{text(node)}</div>;
@@ -1215,6 +1350,13 @@ export default function PublicBuilderDocument({
   postContext?: PublicBuilderPostContext;
   postUrlPrefix?: string;
 }) {
+  // Every page, header, footer and post document receives an independent CSS
+  // scope. Builder node IDs can repeat across documents (for example the
+  // default-section ID), so unscoped selectors make one document's responsive
+  // padding/margins affect another document.
+  const documentId = useId();
+  const documentSelector = `[data-builder-document-id=${JSON.stringify(documentId)}]`;
+
   const fontFamilies = new Set(
     (globalStyles?.fonts ?? [])
       .map((font) => font.family.trim())
@@ -1243,10 +1385,9 @@ export default function PublicBuilderDocument({
       .map((color) => [`--builder-color-${color.id}`, color.value])
   );
   const responsiveStyles = [
-    hoverCss(layout.root),
-    responsiveCss(layout.root),
+    responsiveCss(layout.root, documentSelector),
     motionCss(layout.root),
-    customCss(layout.root),
+    customCss(layout.root, documentSelector),
   ]
     .filter(Boolean)
     .join("\n");
@@ -1269,7 +1410,10 @@ export default function PublicBuilderDocument({
       )}
       <div
         className="public-builder-document"
+        data-builder-document-id={documentId}
         style={{
+          width: "100%",
+          minWidth: 0,
           fontFamily:
             globalStyles?.fonts.find((font) => font.id === "primary-font")
               ?.family || undefined,

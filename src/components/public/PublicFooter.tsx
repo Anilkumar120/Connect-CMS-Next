@@ -14,23 +14,37 @@ import styles from "./PublicNavigation.module.css";
 function getFooterWidgetStyle(
   element: ThemeElement
 ): CSSProperties {
+  const responsiveProperties = ["width", "height", "padding", "margin", "gap"] as const;
   const responsiveVariables: Record<string, string> = {};
-  for (const [property, values] of Object.entries(element.widgetResponsive || {})) {
+
+  for (const property of responsiveProperties) {
     for (const device of ["desktop", "tablet", "mobile"] as const) {
-      const value = values?.[device];
+      const responsiveValue = element.widgetResponsive?.[property]?.[device];
+      const value =
+        responsiveValue ||
+        (device === "desktop"
+          ? element.widgetStyle?.[property] || element.widgetAdvanced?.[property]
+          : undefined);
       if (value) {
         responsiveVariables[`--footer-widget-${property}-${device}`] = value;
       }
     }
   }
 
+  const isResponsiveProperty = (key: string) =>
+    (responsiveProperties as readonly string[]).includes(key);
+
   return {
     ...Object.fromEntries(
       Object.entries(element.widgetAdvanced || {}).filter(
-        ([key]) => !key.endsWith("Unit")
+        ([key]) => !key.endsWith("Unit") && !isResponsiveProperty(key)
       )
     ),
-    ...element.widgetStyle,
+    ...Object.fromEntries(
+      Object.entries(element.widgetStyle || {}).filter(
+        ([key]) => !isResponsiveProperty(key)
+      )
+    ),
     ...responsiveVariables,
     "--footer-widget-color": element.widgetStyle?.color,
   } as CSSProperties;
@@ -100,23 +114,23 @@ export default function PublicFooter() {
     fontWeight: advanced.fontWeight,
     lineHeight: advanced.lineHeight,
     "--footer-width-desktop": advanced.width?.desktop || "1200px",
-    "--footer-width-tablet": advanced.width?.tablet || "100%",
-    "--footer-width-mobile": advanced.width?.mobile || "100%",
+    "--footer-width-tablet": advanced.width?.tablet || `var(--footer-width-desktop, 1200px)`,
+    "--footer-width-mobile": advanced.width?.mobile || `var(--footer-width-desktop, 1200px)`,
     "--footer-height-desktop": advanced.height?.desktop || "auto",
-    "--footer-height-tablet": advanced.height?.tablet || "auto",
-    "--footer-height-mobile": advanced.height?.mobile || "auto",
+    "--footer-height-tablet": advanced.height?.tablet || `var(--footer-height-desktop, auto)`,
+    "--footer-height-mobile": advanced.height?.mobile || `var(--footer-height-desktop, auto)`,
     "--footer-padding-desktop": advanced.padding?.desktop || "35px 24px",
-    "--footer-padding-tablet": advanced.padding?.tablet || "30px 20px",
-    "--footer-padding-mobile": advanced.padding?.mobile || "30px 20px",
+    "--footer-padding-tablet": advanced.padding?.tablet || `var(--footer-padding-desktop, 35px 24px)`,
+    "--footer-padding-mobile": advanced.padding?.mobile || `var(--footer-padding-desktop, 35px 24px)`,
     "--footer-margin-desktop": advanced.margin?.desktop || "0",
-    "--footer-margin-tablet": advanced.margin?.tablet || "0",
-    "--footer-margin-mobile": advanced.margin?.mobile || "0",
+    "--footer-margin-tablet": advanced.margin?.tablet || `var(--footer-margin-desktop, 0)`,
+    "--footer-margin-mobile": advanced.margin?.mobile || `var(--footer-margin-desktop, 0)`,
     "--footer-gap-desktop": advanced.gap?.desktop || "30px",
-    "--footer-gap-tablet": advanced.gap?.tablet || "22px",
-    "--footer-gap-mobile": advanced.gap?.mobile || "18px",
+    "--footer-gap-tablet": advanced.gap?.tablet || `var(--footer-gap-desktop, 30px)`,
+    "--footer-gap-mobile": advanced.gap?.mobile || `var(--footer-gap-desktop, 30px)`,
     "--footer-columns-desktop": responsiveColumns?.desktop || String(footer.columns || 2),
-    "--footer-columns-tablet": responsiveColumns?.tablet || "2",
-    "--footer-columns-mobile": responsiveColumns?.mobile || "1",
+    "--footer-columns-tablet": responsiveColumns?.tablet || `var(--footer-columns-desktop, ${footer.columns || 2})`,
+    "--footer-columns-mobile": responsiveColumns?.mobile || `var(--footer-columns-desktop, ${footer.columns || 2})`,
     "--footer-display": advanced.display || "grid",
   } as CSSProperties;
 

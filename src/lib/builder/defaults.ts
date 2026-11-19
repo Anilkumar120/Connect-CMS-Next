@@ -217,10 +217,10 @@ export function createDocumentKey(
 ): string {
   switch (kind) {
     case "header":
-      return "header:primary";
+      return `header:${target?.id || "primary"}`;
 
     case "footer":
-      return "footer:primary";
+      return `footer:${target?.id || "primary"}`;
 
     case "page":
       if (!target?.id) {

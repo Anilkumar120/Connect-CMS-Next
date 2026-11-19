@@ -54,16 +54,15 @@ async function BlogCategoryContent({
   );
 }
 
-export default function BlogCategoryPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default function BlogCategoryPage({ params }: { params: Promise<{ slug: string }> }) {
+  return <Suspense fallback={<div className={styles.page}>Loading category…</div>}><BlogCategoryPageWithLayout params={params} /></Suspense>;
+}
+
+async function BlogCategoryPageWithLayout({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   return (
-    <PublicLayout>
-      <Suspense fallback={<div className={styles.page}>Loading category…</div>}>
-        <BlogCategoryContent params={params} />
-      </Suspense>
+    <PublicLayout pathname={`/blog/category/${slug}`}>
+      <BlogCategoryContent params={Promise.resolve({ slug })} />
     </PublicLayout>
   );
 }

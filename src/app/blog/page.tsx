@@ -7,7 +7,7 @@ import { getSiteSettings } from "@/lib/site-settings";
 
 export default function BlogIndexPage() {
   return (
-    <PublicLayout>
+    <PublicLayout pathname="/blog">
       <Suspense fallback={null}>
         <BlogIndexContent />
       </Suspense>

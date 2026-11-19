@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function PayBillPage() {
   return (
-    <PublicLayout>
+    <PublicLayout pathname="/pay-bill">
       <PayBillForm />
     </PublicLayout>
   );

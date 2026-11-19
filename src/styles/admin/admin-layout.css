@@ -1211,3 +1211,18 @@ a.quick-action-item:hover {
   font-size: 22px;
   font-weight: 700;
 }
+
+/* Header/Footer builders keep the admin sidebar and topbar visible,
+   while giving the builder canvas the full content area. */
+.admin-shell.admin-header-footer-builder-mode .admin-page-content {
+  width: 100%;
+  min-height: calc(100vh - 76px);
+  padding: 0;
+}
+
+@media (max-width: 800px) {
+  .admin-shell.admin-header-footer-builder-mode .admin-page-content {
+    min-height: calc(100vh - 66px);
+    padding: 0;
+  }
+}

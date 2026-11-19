@@ -68,7 +68,7 @@ export default async function PublicBuilderPosts({
       : orderBy === "created"
         ? { createdAt: direction }
         : { publishedAt: direction };
-  const where = {
+  const where: Prisma.PostWhereInput = {
     status: "PUBLISHED" as const,
     deletedAt: null,
     ...(postType && postType !== "post"
@@ -122,11 +122,16 @@ export default async function PublicBuilderPosts({
       className={className}
       style={{
         ...style,
-        display: layout === "carousel" ? "flex" : "grid",
-        gridTemplateColumns: layout === "carousel" ? undefined : `repeat(var(--builder-prop-columns, ${safeColumns}), minmax(0, 1fr))`,
-        gap,
-        overflowX: layout === "carousel" ? "auto" : undefined,
-        alignItems: "stretch",
+        display: style?.display || (layout === "carousel" ? "flex" : "grid"),
+        flexDirection: style?.flexDirection || ("var(--builder-style-flex-direction, row)" as CSSProperties["flexDirection"]),
+        flexWrap: style?.flexWrap || ("var(--builder-style-flex-wrap, nowrap)" as CSSProperties["flexWrap"]),
+        gridTemplateColumns: style?.gridTemplateColumns || `var(--builder-style-grid-template-columns, repeat(var(--builder-prop-columns, ${safeColumns}), minmax(0, 1fr)))`,
+        gap: style?.gap || `var(--builder-style-gap, var(--builder-prop-gap, ${gap}))`,
+        rowGap: style?.rowGap || "var(--builder-style-row-gap, var(--builder-prop-rowGap, inherit))",
+        columnGap: style?.columnGap || "var(--builder-style-column-gap, var(--builder-prop-columnGap, inherit))",
+        overflowX: layout === "carousel" ? "auto" : style?.overflowX,
+        alignItems: style?.alignItems || ("var(--builder-style-align-items, stretch)" as CSSProperties["alignItems"]),
+        justifyContent: style?.justifyContent || ("var(--builder-style-justify-content, flex-start)" as CSSProperties["justifyContent"]),
       }}
     >
       {posts.map((post) => {

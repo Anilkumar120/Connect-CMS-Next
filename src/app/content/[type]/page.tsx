@@ -44,7 +44,7 @@ async function CustomContentArchive({ type }: { type: string }) {
   });
 
   return (
-    <PublicLayout>
+    <PublicLayout pathname={`/content/${type}`}>
       <main className="custom-content-archive">
         <h1>{contentType.title}</h1>
         {posts.length ? (

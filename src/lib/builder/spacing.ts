@@ -2,6 +2,7 @@ import type { BuilderSpacing } from "./types";
 
 function normalizeValue(value: string | undefined, unit: string | undefined) {
   const trimmed = value?.trim() || "0";
+  if (unit === "custom") return trimmed;
   return /^-?(?:\d+|\d*\.\d+)$/.test(trimmed)
     ? `${trimmed}${unit || "px"}`
     : trimmed;

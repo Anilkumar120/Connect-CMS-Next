@@ -35,17 +35,20 @@ export default function AdminLayout({
     /^\/admin\/builder\/(pages|posts)\/[^/]+\/?$/.test(pathname) ||
     /^\/admin\/builder\/custom\/[^/]+\/[^/]+\/?$/.test(pathname);
 
+  // Header/Footer builders still use the normal admin shell. Only the
+  // dedicated page/post visual-builder routes hide the admin navigation.
   const isHeaderFooterBuilder =
-    pathname === "/admin/appearance/header-builder" ||
-    pathname === "/admin/appearance/footer-builder";
+    /^\/admin\/appearance\/(header|footer)-builder\/?$/.test(pathname);
 
-  const builderMode = isPageBuilder || isHeaderFooterBuilder;
+  const builderMode = isPageBuilder;
 
   return (
     <div
       className={`admin-shell ${
         collapsed ? "sidebar-collapsed" : ""
-      } ${builderMode ? "admin-builder-mode" : ""}`}
+      } ${builderMode ? "admin-builder-mode" : ""} ${
+        isHeaderFooterBuilder ? "admin-header-footer-builder-mode" : ""
+      }`}
     >
       {!builderMode && (
         <AdminSidebar

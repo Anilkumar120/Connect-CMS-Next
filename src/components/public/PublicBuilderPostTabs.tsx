@@ -36,7 +36,7 @@ export default async function PublicBuilderPostTabs(props: Props) {
   const postType = props.postType || "post";
   const count = Math.max(1, Math.min(12, Math.floor(Number(props.count) || 4)));
   const order: Prisma.SortOrder = props.order === "asc" ? "asc" : "desc";
-  const orderByClause: Prisma.PostOrderByWithRelationInput =
+  const orderBy: Prisma.PostOrderByWithRelationInput =
     props.orderBy === "title"
       ? { title: order }
       : props.orderBy === "created"
@@ -53,7 +53,7 @@ export default async function PublicBuilderPostTabs(props: Props) {
     try {
       const posts = await prisma.post.findMany({
         where,
-        orderBy: orderByClause,
+        orderBy,
         take: count,
         select: { id: true, title: true, slug: true, excerpt: true, featuredImage: true, publishedAt: true },
       });

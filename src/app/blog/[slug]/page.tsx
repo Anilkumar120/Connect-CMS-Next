@@ -3,11 +3,6 @@ import { Suspense } from "react";
 import { permanentRedirect, notFound } from "next/navigation";
 import PublicLayout from "@/components/public/PublicLayout";
 import PublicPostView from "@/components/public/PublicPostView";
-import PublicPageBuilder from "@/components/public/PublicPageBuilder";
-import PublicBuilderDocument from "@/components/public/PublicBuilderDocument";
-import { getPostHtml, sanitizePostHtml } from "@/lib/blog-content";
-import { getBuilderLayout } from "@/lib/page-builder-content";
-import { getPublishedBuilderDocument } from "@/lib/builder/public-layout";
 import { prisma } from "@/lib/prisma";
 import {
   getPostPermalink,
@@ -77,37 +72,9 @@ async function BlogPostContent({
     permanentRedirect(canonical);
   }
 
-  const builderDocument = await getPublishedBuilderDocument(`post:${post.id}`);
-  const legacyBuilderLayout = getBuilderLayout(post.content);
-  const safePostHtml = sanitizePostHtml(getPostHtml(post.content));
-
   return (
-    <PublicLayout>
-      {builderDocument?.layout.root.length ? (
-        <PublicBuilderDocument
-          layout={builderDocument.layout}
-          globalStyles={builderDocument.globalStyles}
-          postContext={{
-            id: post.id,
-            title: post.title,
-            slug: post.slug,
-            postTypeId: post.postTypeId,
-            excerpt: post.excerpt,
-            contentHtml: safePostHtml,
-            featuredImage: post.featuredImage,
-            publishedAt: post.publishedAt,
-            categories: post.categories.map(({ category }: { category: { name: string; slug: string } }) => ({
-              name: category.name,
-              slug: category.slug,
-            })),
-          }}
-          postUrlPrefix="/blog"
-        />
-      ) : legacyBuilderLayout?.elements.length ? (
-        <PublicPageBuilder layout={legacyBuilderLayout} />
-      ) : (
-        <PublicPostView post={post} settings={settings} />
-      )}
+    <PublicLayout pathname={`/blog/${slug}`}>
+      <PublicPostView post={post} settings={settings} />
     </PublicLayout>
   );
 }

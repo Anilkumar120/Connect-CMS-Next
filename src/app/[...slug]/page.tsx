@@ -89,6 +89,7 @@ export default function DynamicCMSPage({ params }: Props) {
 async function DynamicCMSPageContent({ params }: Props) {
   await connection();
   const { slug } = await params;
+  const pathname = `/${slug.join("/")}`;
   const [settings, page] = await Promise.all([
     getSiteSettings(),
     findPublishedPage(slug),
@@ -104,20 +105,19 @@ async function DynamicCMSPageContent({ params }: Props) {
 
     if (settings.reading.postsPageId === page.id) {
       return (
-        <PublicLayout>
+        <PublicLayout pathname={pathname}>
           <PublicPostsListing />
         </PublicLayout>
       );
     }
 
     return (
-      <PublicLayout>
+      <PublicLayout pathname={pathname}>
         <CMSPageView page={page} />
       </PublicLayout>
     );
   }
 
-  const pathname = `/${slug.join("/")}`;
   const parsed = matchPostPermalink(pathname, settings);
   let post = parsed?.id
     ? await findPostById(parsed.id)
@@ -147,7 +147,7 @@ async function DynamicCMSPageContent({ params }: Props) {
   }
 
   return (
-    <PublicLayout>
+    <PublicLayout pathname={pathname}>
       <PublicPostView post={post} settings={settings} />
     </PublicLayout>
   );

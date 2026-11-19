@@ -51,16 +51,15 @@ async function BlogTagContent({
   );
 }
 
-export default function BlogTagPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default function BlogTagPage({ params }: { params: Promise<{ slug: string }> }) {
+  return <Suspense fallback={<div className={styles.page}>Loading tag…</div>}><BlogTagPageWithLayout params={params} /></Suspense>;
+}
+
+async function BlogTagPageWithLayout({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   return (
-    <PublicLayout>
-      <Suspense fallback={<div className={styles.page}>Loading tag…</div>}>
-        <BlogTagContent params={params} />
-      </Suspense>
+    <PublicLayout pathname={`/blog/tag/${slug}`}>
+      <BlogTagContent params={Promise.resolve({ slug })} />
     </PublicLayout>
   );
 }
