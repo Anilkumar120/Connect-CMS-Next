@@ -1,0 +1,431 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+  AUTHOR
+  CONTRIBUTOR
+  SEO_MANAGER
+  WEB_DESIGNER
+}
+
+enum PageStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RevisionType {
+  DRAFT
+  PUBLISHED
+  RESTORED
+}
+
+enum MenuLocation {
+  HEADER
+  FOOTER
+}
+
+enum MenuItemType {
+  PAGE
+  CUSTOM_LINK
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FormSubmissionStatus {
+  UNREAD
+  READ
+  SPAM
+}
+
+enum BuilderDocumentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PasswordResetChannel {
+  EMAIL
+  SMS
+}
+
+enum PaymentRequestStatus {
+  REQUESTED
+  PENDING_LOOKUP
+}
+
+model PaymentGatewayConfig {
+  id                 String   @id @default(cuid())
+  code               String   @unique @db.VarChar(50)
+  displayName        String   @db.VarChar(120)
+  enabled            Boolean  @default(false)
+  publicInstructions String?  @db.Text
+  encryptedSettings  String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([enabled])
+}
+
+model PaymentRequest {
+  id                       String               @id @default(cuid())
+  transactionNumber        String               @unique @db.VarChar(40)
+  status                   PaymentRequestStatus @default(PENDING_LOOKUP)
+  customerName             String               @db.VarChar(160)
+  accountNumber            String               @db.VarChar(80)
+  email                    String?              @db.VarChar(254)
+  phone                    String?              @db.VarChar(32)
+  amount                   Decimal              @db.Decimal(12, 2)
+  gatewayCode              String               @db.VarChar(50)
+  gatewayName              String               @db.VarChar(120)
+  privacyConsent           Boolean              @default(false)
+  providerTransactionId    String?              @db.VarChar(191)
+  providerStatus           String?              @db.VarChar(100)
+  providerResponse         Json?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  @@index([createdAt])
+  @@index([accountNumber])
+  @@index([email])
+  @@index([phone])
+  @@index([gatewayCode, createdAt])
+  @@index([status, createdAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique @db.VarChar(50)
+  email        String   @unique
+  phone        String?  @unique @db.VarChar(32)
+  avatarUrl    String?  @db.VarChar(1000)
+  passwordHash String
+  role         UserRole @default(EDITOR)
+  isActive     Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  revisions         ContentRevision[]
+  passwordResetOtps PasswordResetOtp[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model PasswordResetOtp {
+  id             String               @id @default(cuid())
+  userId         String?
+  channel        PasswordResetChannel
+  recipientHash  String               @db.Char(64)
+  requestIpHash  String               @db.Char(64)
+  tokenHash      String               @db.Char(64)
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  failedAttempts Int                  @default(0)
+  createdAt      DateTime             @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([recipientHash, channel, createdAt])
+  @@index([requestIpHash, createdAt])
+  @@index([userId])
+}
+
+model Page {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  description String?    @db.Text
+  content     Json?
+  status      PageStatus @default(DRAFT)
+
+  seoTitle       String? @db.VarChar(255)
+  seoDescription String? @db.Text
+  canonicalUrl   String? @db.VarChar(500)
+  focusKeyword   String? @db.VarChar(255)
+  metaRobots     String? @default("index,follow")
+
+  parentId String?
+  parent   Page?   @relation("PageHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Page[]  @relation("PageHierarchy")
+
+  publishedAt DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  revisions ContentRevision[]
+  menuItems MenuItem[]
+
+  @@index([parentId])
+  @@index([deletedAt])
+}
+
+model Post {
+  id            String          @id @default(cuid())
+  postTypeId    String?
+  postType      CustomPostType? @relation(fields: [postTypeId], references: [id], onDelete: SetNull)
+  title         String
+  slug          String          @unique
+  excerpt       String?         @db.Text
+  content       Json?
+  featuredImage String?         @db.VarChar(1000)
+  status        PageStatus      @default(DRAFT)
+
+  seoTitle       String? @db.VarChar(255)
+  seoDescription String? @db.Text
+  focusKeyword   String? @db.VarChar(255)
+
+  publishedAt DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  categories PostCategory[]
+  tags       PostTag[]
+
+  @@index([status, publishedAt])
+  @@index([deletedAt])
+  @@index([postTypeId, status, publishedAt])
+}
+
+model CustomPostType {
+  id            String   @id @default(cuid())
+  title         String   @db.VarChar(100)
+  slug          String   @unique @db.VarChar(100)
+  icon          String   @default("FileText") @db.VarChar(50)
+  hasCategories Boolean  @default(true)
+  hasTags       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  posts Post[]
+}
+
+model Category {
+  id          String         @id @default(cuid())
+  name        String         @db.VarChar(150)
+  slug        String         @unique @db.VarChar(180)
+  description String?        @db.Text
+  imageUrl    String?        @db.VarChar(1000)
+  parentId    String?
+  parent      Category?      @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[]     @relation("CategoryHierarchy")
+  posts       PostCategory[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([parentId])
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @db.VarChar(150)
+  slug      String    @unique @db.VarChar(180)
+  imageUrl  String?   @db.VarChar(1000)
+  posts     PostTag[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model PostCategory {
+  postId     String
+  categoryId String
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([postId, categoryId])
+  @@index([categoryId])
+}
+
+model PostTag {
+  postId String
+  tagId  String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model ContentRevision {
+  id      String       @id @default(cuid())
+  pageId  String
+  userId  String?
+  type    RevisionType @default(DRAFT)
+  title   String
+  content Json?
+  message String?      @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+
+  page Page  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([pageId, createdAt])
+  @@index([userId])
+}
+
+model MediaAsset {
+  id           String   @id @default(cuid())
+  fileName     String
+  originalName String
+  mimeType     String
+  fileSize     BigInt
+  filePath     String   @db.VarChar(1000)
+  altText      String?  @db.VarChar(500)
+  title        String?  @db.VarChar(255)
+  caption      String?  @db.VarChar(500)
+  description  String?  @db.Text
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([mimeType])
+  @@index([isDeleted])
+}
+
+model SiteSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Menu {
+  id       String        @id @default(cuid())
+  name     String        @db.VarChar(150)
+  location MenuLocation? @unique
+  items    MenuItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model MenuItem {
+  id        String       @id @default(cuid())
+  menuId    String
+  label     String       @db.VarChar(150)
+  type      MenuItemType
+  url       String?      @db.VarChar(1000)
+  target    String       @default("_self") @db.VarChar(20)
+  sortOrder Int          @default(0)
+
+  pageId String?
+  page   Page?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  parentId String?
+  parent   MenuItem?  @relation("MenuItemHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children MenuItem[] @relation("MenuItemHierarchy")
+
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([menuId, sortOrder])
+  @@index([parentId])
+  @@index([pageId])
+}
+
+model Form {
+  id          String  @id @default(cuid())
+  title       String  @db.VarChar(200)
+  slug        String  @unique @db.VarChar(200)
+  description String? @db.Text
+
+  fields   Json
+  settings Json?
+  styles   Json?
+
+  status FormStatus @default(DRAFT)
+  deletedAt DateTime?
+
+  submissions FormSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([deletedAt])
+}
+
+model FormSubmission {
+  id     String               @id @default(cuid())
+  formId String
+  data   Json
+  status FormSubmissionStatus @default(UNREAD)
+  deletedAt DateTime?
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([formId, createdAt])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model BuilderDocument {
+  id           String                @id @default(cuid())
+  documentKey  String                @unique @db.VarChar(191)
+  kind         String                @db.VarChar(40)
+  title        String                @db.VarChar(255)
+  slug         String?               @db.VarChar(255)
+  targetId     String?               @db.VarChar(191)
+  postTypeSlug String?               @db.VarChar(100)
+  status       BuilderDocumentStatus @default(DRAFT)
+  layout       Json
+  settings     Json?
+  globalStyles Json?
+  conditions   Json?
+  legacyData   Json?
+  publishedAt  DateTime?
+  createdById  String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  revisions BuilderRevision[]
+
+  @@index([kind, status])
+  @@index([targetId])
+  @@index([postTypeSlug])
+  @@index([slug])
+}
+
+model BuilderRevision {
+  id          String   @id @default(cuid())
+  documentId  String
+  revisionNo  Int
+  title       String   @db.VarChar(255)
+  snapshot    Json
+  message     String?  @db.VarChar(500)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  document BuilderDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, revisionNo])
+  @@index([documentId, createdAt])
+}

@@ -69,6 +69,12 @@ enum PaymentRequestStatus {
   PENDING_LOOKUP
 }
 
+enum CommentStatus {
+  PENDING
+  APPROVED
+  SPAM
+}
+
 model PaymentGatewayConfig {
   id                 String   @id @default(cuid())
   code               String   @unique @db.VarChar(50)
@@ -83,22 +89,22 @@ model PaymentGatewayConfig {
 }
 
 model PaymentRequest {
-  id                       String               @id @default(cuid())
-  transactionNumber        String               @unique @db.VarChar(40)
-  status                   PaymentRequestStatus @default(PENDING_LOOKUP)
-  customerName             String               @db.VarChar(160)
-  accountNumber            String               @db.VarChar(80)
-  email                    String?              @db.VarChar(254)
-  phone                    String?              @db.VarChar(32)
-  amount                   Decimal              @db.Decimal(12, 2)
-  gatewayCode              String               @db.VarChar(50)
-  gatewayName              String               @db.VarChar(120)
-  privacyConsent           Boolean              @default(false)
-  providerTransactionId    String?              @db.VarChar(191)
-  providerStatus           String?              @db.VarChar(100)
-  providerResponse         Json?
-  createdAt                DateTime             @default(now())
-  updatedAt                DateTime             @updatedAt
+  id                    String               @id @default(cuid())
+  transactionNumber     String               @unique @db.VarChar(40)
+  status                PaymentRequestStatus @default(PENDING_LOOKUP)
+  customerName          String               @db.VarChar(160)
+  accountNumber         String               @db.VarChar(80)
+  email                 String?              @db.VarChar(254)
+  phone                 String?              @db.VarChar(32)
+  amount                Decimal              @db.Decimal(12, 2)
+  gatewayCode           String               @db.VarChar(50)
+  gatewayName           String               @db.VarChar(120)
+  privacyConsent        Boolean              @default(false)
+  providerTransactionId String?              @db.VarChar(191)
+  providerStatus        String?              @db.VarChar(100)
+  providerResponse      Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
   @@index([createdAt])
   @@index([accountNumber])
@@ -200,6 +206,7 @@ model Post {
 
   categories PostCategory[]
   tags       PostTag[]
+  comments   Comment[]
 
   @@index([status, publishedAt])
   @@index([deletedAt])
@@ -358,7 +365,7 @@ model Form {
   settings Json?
   styles   Json?
 
-  status FormStatus @default(DRAFT)
+  status    FormStatus @default(DRAFT)
   deletedAt DateTime?
 
   submissions FormSubmission[]
@@ -371,10 +378,10 @@ model Form {
 }
 
 model FormSubmission {
-  id     String               @id @default(cuid())
-  formId String
-  data   Json
-  status FormSubmissionStatus @default(UNREAD)
+  id        String               @id @default(cuid())
+  formId    String
+  data      Json
+  status    FormSubmissionStatus @default(UNREAD)
   deletedAt DateTime?
 
   form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
@@ -428,4 +435,38 @@ model BuilderRevision {
 
   @@unique([documentId, revisionNo])
   @@index([documentId, createdAt])
+}
+
+model Comment {
+  id          String        @id @default(cuid())
+  postId      String
+  authorName  String        @db.VarChar(120)
+  authorEmail String        @db.VarChar(254)
+  content     String        @db.Text
+  status      CommentStatus @default(PENDING)
+  ipHash      String?       @db.Char(64)
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([deletedAt])
+  @@index([ipHash, createdAt])
+}
+
+model AdminNotification {
+  id         String    @id @default(cuid())
+  sourceType String    @db.VarChar(50)
+  sourceId   String    @db.VarChar(191)
+  title      String    @db.VarChar(200)
+  message    String    @db.VarChar(500)
+  href       String    @db.VarChar(500)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([sourceType, sourceId])
+  @@index([readAt, createdAt])
 }

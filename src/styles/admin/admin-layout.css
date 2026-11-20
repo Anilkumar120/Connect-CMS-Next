@@ -1256,3 +1256,500 @@ a.quick-action-item:hover {
     height: calc(100vh - 66px);
   }
 }
+
+/* ADMIN GLOBAL COLOR SYSTEM v2 START */
+.admin-shell {
+  --admin-hover-bg: #eaf2fc;
+  --admin-hover-text: #0c2f55;
+  --admin-sidebar-text: #ffffff;
+  --admin-button-bg: var(--admin-accent);
+  --admin-button-text: #ffffff;
+  --admin-button-hover: #2c6fcb;
+  --admin-button-hover-text: #ffffff;
+  --admin-input-bg: var(--admin-surface);
+  --admin-input-text: var(--admin-text);
+  background: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-main,
+.admin-shell .admin-page-content {
+  background-color: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-sidebar {
+  background-color: var(--admin-primary) !important;
+  color: var(--admin-sidebar-text) !important;
+}
+
+.admin-shell .admin-sidebar-header,
+.admin-shell .admin-sidebar-footer {
+  border-color: color-mix(in srgb, var(--admin-sidebar-text) 18%, transparent) !important;
+}
+
+.admin-shell .admin-sidebar .admin-menu-section {
+  color: color-mix(in srgb, var(--admin-sidebar-text) 68%, transparent) !important;
+}
+
+.admin-shell .admin-sidebar .admin-menu-link {
+  color: var(--admin-sidebar-text) !important;
+}
+
+.admin-shell .admin-sidebar .admin-menu-link:not(.active):hover {
+  background-color: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+.admin-shell .admin-sidebar .admin-menu-link.active {
+  background-color: var(--admin-accent) !important;
+  color: var(--admin-button-text) !important;
+}
+
+.admin-shell .admin-topbar,
+.admin-shell .profile-dropdown-menu {
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+  border-color: var(--admin-border) !important;
+}
+
+.admin-shell .admin-topbar,
+.admin-shell .topbar-search {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-shell .admin-topbar .topbar-search {
+  background-color: var(--admin-input-bg) !important;
+  color: var(--admin-muted) !important;
+}
+
+.admin-shell .admin-topbar .topbar-search input {
+  color: var(--admin-input-text) !important;
+}
+
+.admin-shell .topbar-menu-button,
+.admin-shell .topbar-icon-button,
+.admin-shell .sidebar-collapse-button {
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .topbar-menu-button:hover,
+.admin-shell .topbar-icon-button:hover,
+.admin-shell .sidebar-collapse-button:hover {
+  background-color: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+.admin-shell .admin-page-content h1,
+.admin-shell .admin-page-content h2,
+.admin-shell .admin-page-content h3,
+.admin-shell .admin-page-content h4,
+.admin-shell .admin-page-content h5,
+.admin-shell .admin-page-content h6 {
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content [class*="card" i],
+.admin-shell .admin-page-content [class*="panel" i],
+.admin-shell .admin-page-content [class*="modal" i],
+.admin-shell .admin-page-content [class*="tableWrap" i],
+.admin-shell .admin-page-content [class*="table-wrap" i] {
+  border-color: var(--admin-border) !important;
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content p:not([class*="error" i]):not([class*="success" i]):not([class*="status" i]),
+.admin-shell .admin-page-content label,
+.admin-shell .admin-page-content td,
+.admin-shell .admin-page-content th {
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content [class*="muted" i],
+.admin-shell .admin-page-content [class*="description" i] {
+  color: var(--admin-muted) !important;
+}
+
+.admin-shell .admin-page-content table th {
+  background-color: var(--admin-bg) !important;
+  border-color: var(--admin-border) !important;
+}
+
+.admin-shell .admin-page-content table td {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-shell .admin-page-content tr:hover {
+  background-color: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+.admin-shell .admin-page-content input:not([type="checkbox"]):not([type="radio"]),
+.admin-shell .admin-page-content select,
+.admin-shell .admin-page-content textarea {
+  border-color: var(--admin-border) !important;
+  background-color: var(--admin-input-bg) !important;
+  color: var(--admin-input-text) !important;
+}
+
+.admin-shell .admin-page-content input::placeholder,
+.admin-shell .admin-page-content textarea::placeholder {
+  color: var(--admin-muted) !important;
+  opacity: 1;
+}
+
+
+/* Secondary, tab and icon controls keep a quiet background but share hover colors. */
+.admin-shell .admin-page-content button[class*="secondary" i],
+.admin-shell .admin-page-content button[class*="ghost" i],
+.admin-shell .admin-page-content button[class*="icon" i],
+.admin-shell .admin-page-content button[class*="link" i],
+.admin-shell .admin-page-content button[class*="close" i],
+.admin-shell .admin-page-content button[class*="cancel" i],
+.admin-shell .admin-page-content [class*="tabs" i] button {
+  background-color: transparent !important;
+  color: var(--admin-text) !important;
+  border-color: var(--admin-border) !important;
+}
+
+.admin-shell .admin-page-content button[class*="secondary" i]:hover,
+.admin-shell .admin-page-content button[class*="ghost" i]:hover,
+.admin-shell .ad/* ADMIN GLOBAL COLOR SYSTEM v2 END */
+
+/* ADMIN PALETTE UNIFICATION V3 START */
+/* Accent color from the selected theme preset drives all primary admin actions. */
+.admin-shell {
+  --admin-button-bg: var(--admin-accent);
+  --admin-button-hover: var(--admin-accent);
+}
+
+/* Primary CTA links (including CSS-module links and the Pages inline-style link). */
+.admin-shell .admin-page-content a.pages-add-button,
+.admin-shell .admin-page-content a[class*="primary" i],
+.admin-shell .admin-page-content a[class*="primaryButton" i] {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-accent) !important;
+  color: var(--admin-button-text, #ffffff) !important;
+  text-decoration: none !important;
+}
+
+.admin-shell .admin-page-content a.pages-add-button:hover,
+.admin-shell .admin-page-content a[class*="primary" i]:hover,
+.admin-shell .admin-page-content a[class*="primaryButton" i]:hover {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-accent) !important;
+  color: var(--admin-button-text, #ffffff) !important;
+  filter: brightness(.88);
+}
+
+/* Secondary button-like links such as Categories and Tags. */
+.admin-shell .admin-page-content a[class*="button" i]:not([class*="primary" i]):not([class*="danger" i]):not(.pages-add-button) {
+  border-color: var(--admin-border) !important;
+  background: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content a[class*="button" i]:not([class*="primary" i]):not([class*="danger" i]):not(.pages-add-button):hover {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+/* Filter tabs: inactive tabs are quiet; the selected tab follows the palette. */
+.admin-shell .admin-page-content button[class*="filter" i],
+.admin-shell .admin-page-content .filters button,
+.admin-shell .admin-page-content [class*="filters" i] button,
+.admin-shell .admin-page-content [role="tab"] {
+  border: 1px solid var(--admin-border) !important;
+  border-radius: 7px !important;
+  background: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+
+.admin-shell .admin-page-content button[class*="filter" i][class*="active" i],
+.admin-shell .admin-page-content .filters button.active,
+.admin-shell .admin-page-content [class*="filters" i] button[class*="active" i],
+.admin-shell .admin-page-content [role="tab"][aria-selected="true"],
+.admin-shell .admin-page-content button[aria-pressed="true"] {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-accent) !important;
+  color: var(--admin-button-text, #ffffff) !important;
+  box-shadow: none !important;
+}
+
+.admin-shell .admin-page-content button[class*="filter" i]:not([class*="active" i]):hover,
+.admin-shell .admin-page-content .filters button:not(.active):hover,
+.admin-shell .admin-page-content [class*="filters" i] button:not([class*="active" i]):hover,
+.admin-shell .admin-page-content [role="tab"]:not([aria-selected="true"]):hover {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+/* A single palette accent also supplies a consistent darker hover state. */
+.admin-shell .admin-page-content button:not([class*="danger" i]):not([class*="delete" i]):not([class*="trash" i]):not([class*="secondary" i]):not([class*="ghost" i]):not([class*="icon" i]):not([class*="link" i]):not([class*="close" i]):not([class*="cancel" i]):not([class*="remove" i]):not([class*="filter" i]):not([class*="tab" i]):hover:not(:disabled),
+.admin-shell .admin-page-content button[class*="filter" i][class*="active" i]:hover,
+.admin-shell .admin-page-content [role="tab"][aria-selected="true"]:hover {
+  filter: brightness(.88);
+}
+
+/* Normal secondary action buttons and icon-only utility buttons. */
+.admin-shell .admin-page-content button[class*="action" i],
+.admin-shell .admin-page-content button[class*="secondary" i],
+.admin-shell .admin-page-content button[class*="ghost" i],
+.admin-shell .admin-page-content button[class*="link" i],
+.admin-shell .admin-page-content button[class*="icon" i],
+.admin-shell .admin-page-content button[class*="select" i] {
+  border-color: var(--admin-border) !important;
+  background: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content button[class*="action" i]:hover,
+.admin-shell .admin-page-content button[class*="secondary" i]:hover,
+.admin-shell .admin-page-content button[class*="ghost" i]:hover,
+.admin-shell .admin-page-content button[class*="link" i]:hover,
+.admin-shell .admin-page-content button[class*="icon" i]:hover,
+.admin-shell .admin-page-content button[class*="select" i]:hover {
+  border-color: var(--admin-accent) !important;
+  background: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+/* Text, table, form and common content surfaces. */
+.admin-shell .admin-page-content [class*="tableCard" i],
+.admin-shell .admin-page-content [class*="table-card" i],
+.admin-shell .admin-page-content [class*="tableCard" i] table,
+.admin-shell .admin-page-content [class*="card" i],
+.admin-shell .admin-page-content [class*="panel" i] {
+  border-color: var(--admin-border) !important;
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content input:not([type="checkbox"]):not([type="radio"]),
+.admin-shell .admin-page-content select,
+.admin-shell .admin-page-content textarea {
+  border-color: var(--admin-border) !important;
+  background-color: var(--admin-input-bg, var(--admin-surface)) !important;
+  color: var(--admin-input-text, var(--admin-text)) !important;
+}
+
+.admin-shell .admin-page-content input:focus,
+.admin-shell .admin-page-content select:focus,
+.admin-shell .admin-page-content textarea:focus {
+  border-color: var(--admin-accent) !important;
+  outline-color: var(--admin-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--admin-accent) 16%, transparent) !important;
+}
+
+.admin-shell .admin-page-content table th {
+  border-color: var(--admin-border) !important;
+  background: var(--admin-bg) !important;
+  color: var(--admin-muted) !important;
+}
+
+.admin-shell .admin-page-content table td {
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content table tbody tr:hover {
+  background: var(--admin-hover-bg) !important;
+}
+
+.admin-shell .admin-page-content h1,
+.admin-shell .admin-page-content h2,
+.admin-shell .admin-page-content h3,
+.admin-shell .admin-page-content h4,
+.admin-shell .admin-page-content h5,
+.admin-shell .admin-page-content h6 {
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-page-content a:not([class*="button" i]):not([class*="primary" i]):not([class*="danger" i]) {
+  color: var(--admin-accent) !important;
+}
+
+.admin-shell .admin-page-content a:not([class*="button" i]):not([class*="primary" i]):not([class*="danger" i]):hover {
+  color: var(--admin-hover-text) !important;
+}
+
+/* Preserve semantic status badges and destructive (danger/delete/trash) colors. */
+.admin-shell .admin-page-content button[class*="danger" i],
+.admin-shell .admin-page-content button[class*="delete" i],
+.admin-shell .admin-page-content button[class*="trash" i],
+.admin-shell .admin-page-content a[class*="danger" i] {
+  color: #b42318 !important;
+}
+/* ADMIN PALETTE UNIFICATION V3 END */
+
+
+.admin-shell .admin-page-content [class*="tabs" i] button[class*="active" i] {
+  color: var(--admin-accent) !important;
+  border-bottom-color: var(--admin-accent) !important;
+}
+
+/* Destructive actions retain their warning color instead of becoming primary buttons. */
+.admin-shell .admin-page-content button[class*="danger" i],
+.admin-shell .admin-page-content button[class*="delete" i],
+.admin-shell .admin-page-content button[class*="trash" i] {
+  color: #bd2637;
+}
+
+.admin-shell .admin-page-content button:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+
+.admin-shell .admin-page-content a:not([class*="button" i]):not([class*="primary" i]) {
+  color: var(--admin-accent);
+}
+
+.admin-shell .admin-page-content a:not([class*="button" i]):not([class*="primary" i]):hover {
+  color: var(--admin-hover-text) !important;
+}
+
+.admin-shell .profile-dropdown-item:hover {
+  background-color: var(--admin-hover-bg) !important;
+  color: var(--admin-hover-text) !important;
+}
+
+/* ADMIN GLOBAL COLOR SYSTEM v2 END */ 
+
+/* ADMIN 15 PALETTES V4 START */
+.admin-shell {
+  --admin-filter-text: #475569;
+  --admin-filter-active-text: #1E293B;
+  --admin-filter-hover-text: #334155;
+}
+html[data-admin-theme="dark"] .admin-shell {
+  --admin-filter-text: #CBD5E1;
+  --admin-filter-active-text: #F8FAFC;
+  --admin-filter-hover-text: #E2E8F0;
+}
+
+/* Status filters across Pages, Posts, Media, Forms and Comments stay neutral text tabs. */
+.admin-shell .admin-page-content :is(
+  [class*="tabs" i],
+  [class*="filter-tabs" i],
+  [class*="filterTabs" i],
+  [class*="status-filter" i],
+  [class*="statusFilter" i],
+  [class*="view-tabs" i],
+  [class*="viewTabs" i]
+) button,
+.admin-shell .admin-page-content button[class*="tab" i],
+.admin-shell .admin-page-content button[role="tab"],
+.admin-shell .admin-page-content [role="tab"] {
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: var(--admin-filter-text) !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  filter: none !important;
+}
+
+.admin-shell .admin-page-content :is(
+  [class*="tabs" i],
+  [class*="filter-tabs" i],
+  [class*="filterTabs" i],
+  [class*="status-filter" i],
+  [class*="statusFilter" i],
+  [class*="view-tabs" i],
+  [class*="viewTabs" i]
+) button[class*="active" i],
+.admin-shell .admin-page-content button[class*="tab" i][class*="active" i],
+.admin-shell .admin-page-content button[role="tab"][aria-selected="true"],
+.admin-shell .admin-page-content [role="tab"][aria-selected="true"],
+.admin-shell .admin-page-content button[aria-pressed="true"] {
+  border: 0 !important;
+  border-bottom: 2px solid var(--admin-filter-active-text) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--admin-filter-active-text) !important;
+  font-weight: 700 !important;
+  box-shadow: none !important;
+}
+
+.admin-shell .admin-page-content :is(
+  [class*="tabs" i],
+  [class*="filter-tabs" i],
+  [class*="filterTabs" i],
+  [class*="status-filter" i],
+  [class*="statusFilter" i],
+  [class*="view-tabs" i],
+  [class*="viewTabs" i]
+) button:hover,
+.admin-shell .admin-page-content button[class*="tab" i]:hover,
+.admin-shell .admin-page-content button[role="tab"]:hover,
+.admin-shell .admin-page-content [role="tab"]:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--admin-filter-hover-text) !important;
+  border-bottom-color: var(--admin-filter-hover-text) !important;
+  filter: none !important;
+}
+/* Do not recolor status badges (Published/Draft/Review/Trash) or danger actions. */
+/* ADMIN 15 PALETTES V4 END */
+
+
+/* ADMIN STATUS FILTERS — ALWAYS PLAIN TEXT */
+.admin-shell .admin-page-content .filters button.filter-button,
+.admin-shell .admin-page-content .filters button.filter-button.active {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 9px 12px !important;
+  margin: 0 12px 0 0 !important;
+
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+
+  color: #536174 !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+/* Active filter: underline only, no colored background */
+.admin-shell .admin-page-content .filters button.filter-button.active {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #172b45 !important;
+  border-bottom: 2px solid #536174 !important;
+  font-weight: 700 !important;
+}
+
+/* Hover: keep background transparent */
+.admin-shell .admin-page-content .filters button.filter-button:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #172b45 !important;
+}
+
+/* Filter counts */
+.admin-shell .admin-page-content .filters .filter-count {
+  background: transparent !important;
+  color: #718096 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* Keyboard focus */
+.admin-shell .admin-page-content .filters button.filter-button:focus-visible {
+  outline: 2px solid #64748b !important;
+  outline-offset: 3px !important;
+}

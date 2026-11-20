@@ -1,10 +1,12 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { getPostHtml, sanitizePostHtml } from "@/lib/blog-content";
 import { formatSiteDateTime, getPostPermalink, type SiteSettings } from "@/lib/site-settings";
 import styles from "@/app/blog/Blog.module.css";
 import { getSeoContentMeta } from "@/lib/seo-manager";
 import SeoJsonLd from "@/components/public/SeoJsonLd";
+import BlogComments from "@/components/public/BlogComments";
 
 export type PublicPost = Prisma.PostGetPayload<{
   include: {
@@ -20,11 +22,18 @@ export default async function PublicPostView({
   post: PublicPost;
   settings: SiteSettings;
 }) {
-  const [html, seoMeta] = await Promise.all([
+  const [html, seoMeta, comments] = await Promise.all([
     Promise.resolve(sanitizePostHtml(getPostHtml(post.content))),
     getSeoContentMeta("post", post.id),
+    prisma.comment.findMany({
+      where: { postId: post.id, status: "APPROVED", deletedAt: null },
+      select: { id: true, authorName: true, content: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
+
   const url = seoMeta.canonicalUrl || `${settings.general.siteAddress.replace(/\/$/, "")}${getPostPermalink(post, settings)}`;
+
   return (
     <div className={styles.page}>
       <SeoJsonLd
@@ -47,18 +56,12 @@ export default async function PublicPostView({
             </time>
           )}
           {post.categories.map(({ category }) => (
-            <Link
-              className={styles.categoryLink}
-              href={`/blog/category/${category.slug}`}
-              key={category.slug}
-            >
+            <Link className={styles.categoryLink} href={`/blog/category/${category.slug}`} key={category.slug}>
               {category.name}
             </Link>
           ))}
         </div>
-        {post.featuredImage && (
-          <img className={styles.featuredImage} src={post.featuredImage} alt={post.title} />
-        )}
+        {post.featuredImage && <img className={styles.featuredImage} src={post.featuredImage} alt={post.title} />}
         {post.excerpt && <p className={styles.intro}>{post.excerpt}</p>}
         {html ? (
           <div className={styles.articleBody} dangerouslySetInnerHTML={{ __html: html }} />
@@ -75,6 +78,10 @@ export default async function PublicPostView({
           </div>
         )}
       </article>
+      <BlogComments
+        postSlug={post.slug}
+        comments={comments.map((comment) => ({ ...comment, createdAt: comment.createdAt.toISOString() }))}
+      />
     </div>
   );
 }
