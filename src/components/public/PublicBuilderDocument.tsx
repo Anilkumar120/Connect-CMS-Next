@@ -19,6 +19,7 @@ import {
 import PublicNavigationMenu, {
   type PublicNavigationMenuItem,
 } from "./PublicNavigationMenu";
+import BuilderVideoPlayer from "./BuilderVideoPlayer";
 import BuilderDynamicLink from "./BuilderDynamicLink";
 import BannerSlider, { type BannerSliderSlide } from "./BannerSlider";
 import { themeIcons } from "./theme-icons";
@@ -1036,12 +1037,64 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   if (node.type === "divider") return <hr key={node.id} {...common} style={{ ...style, border: 0, borderTop: `${stringProp("thickness", "1px")} ${stringProp("style", "solid")} ${stringProp("color", "#e2e8f0")}` }} />;
   if (node.type === "spacer") return <div key={node.id} {...common} style={{ ...style, minHeight: style.minHeight || style.height || stringProp("height", "40px") }} aria-hidden="true" />;
   if (node.type === "video") {
-    const src = safeUrl(props.url, true);
-    return src ? <video key={node.id} {...common} src={src} poster={imageUrl(props.poster) || undefined} controls={props.controls !== false} autoPlay={Boolean(props.autoplay)} muted={Boolean(props.muted)} loop={Boolean(props.loop)} playsInline /> : null;
+    return (
+      <BuilderVideoPlayer
+        id={node.advanced?.cssId || undefined}
+        className={className}
+        nodeId={node.id}
+        source={stringProp("source", "auto")}
+        url={stringProp("url")}
+        poster={stringProp("poster")}
+        startTime={props.startTime as number | string | undefined}
+        endTime={props.endTime as number | string | undefined}
+        autoplay={Boolean(props.autoplay)}
+        playOnMobile={Boolean(props.playOnMobile)}
+        muted={Boolean(props.muted)}
+        loop={Boolean(props.loop)}
+        controls={props.controls !== false}
+        captions={Boolean(props.captions)}
+        captionsUrl={stringProp("captionsUrl")}
+        captionsLanguage={stringProp("captionsLanguage", "en")}
+        captionsLabel={stringProp("captionsLabel", "Captions")}
+        privacyMode={Boolean(props.privacyMode)}
+        lazyLoad={props.lazyLoad !== false}
+        suggestedVideos={stringProp("suggestedVideos", "any")}
+        modestBranding={Boolean(props.modestBranding)}
+        showTitle={props.showTitle !== false}
+        showPortrait={props.showPortrait !== false}
+        showByline={props.showByline !== false}
+        showInfo={props.showInfo !== false}
+        showLogo={props.showLogo !== false}
+        controlsColor={stringProp("controlsColor")}
+        downloadButton={props.downloadButton !== false}
+        preload={stringProp("preload", "metadata")}
+        imageOverlay={Boolean(props.imageOverlay)}
+        playIcon={props.playIcon !== false}
+        lightbox={Boolean(props.lightbox)}
+        aspectRatio={stringProp("aspectRatio", "16:9")}
+        objectFit={stringProp("objectFit", "cover")}
+        overlayOpacity={props.overlayOpacity as number | string | undefined}
+        overlayColor={stringProp("overlayColor", "#000000")}
+        playIconColor={stringProp("playIconColor", "#ffffff")}
+        playIconSize={props.playIconSize as number | string | undefined}
+        style={style}
+      />
+    );
   }
   if (node.type === "audio") {
     const src = safeUrl(props.url, true);
-    return src ? <audio key={node.id} {...common} src={src} controls={props.controls !== false} /> : null;
+    return src ? (
+      <audio
+        key={node.id}
+        {...common}
+        src={src}
+        controls={props.controls !== false}
+        autoPlay={Boolean(props.autoplay)}
+        loop={Boolean(props.loop)}
+        preload={( ["auto", "metadata", "none"].includes(String(props.preload)) ? props.preload : "metadata") as "auto" | "metadata" | "none"}
+        style={{ ...style, width: style.width || "100%" }}
+      />
+    ) : null;
   }
   if (node.type === "menu") {
     const items = Array.isArray(props.items) ? props.items : [];

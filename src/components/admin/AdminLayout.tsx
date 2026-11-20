@@ -1,6 +1,12 @@
 "use client";
 
-import { Suspense, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import AdminSidebar from "./AdminSidebar";
 import AdminTopbar from "./AdminTopbar";
@@ -32,11 +38,61 @@ function AdminLayoutFrame({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // Isolate Builder from the saved Admin appearance theme.
+  useEffect(() => {
+    if (!builderMode) return;
+
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    const documentRoot = document.documentElement;
+    const previousTheme = documentRoot.getAttribute("data-admin-theme");
+
+    const adminVariableNames: string[] = [];
+
+    for (let index = 0; index < shell.style.length; index += 1) {
+      const name = shell.style.item(index);
+
+      if (name.startsWith("--admin-")) {
+        adminVariableNames.push(name);
+      }
+    }
+
+    const previousVariables = adminVariableNames.map((name) => ({
+      name,
+      value: shell.style.getPropertyValue(name),
+      priority: shell.style.getPropertyPriority(name),
+    }));
+
+    // Remove only Admin theme variables while Builder is active.
+    adminVariableNames.forEach((name) => {
+      shell.style.removeProperty(name);
+    });
+
+    documentRoot.removeAttribute("data-admin-theme");
+
+    return () => {
+      // Restore the previous Admin theme when leaving Builder.
+      previousVariables.forEach(({ name, value, priority }) => {
+        shell.style.setProperty(name, value, priority);
+      });
+
+      if (previousTheme === null) {
+        documentRoot.removeAttribute("data-admin-theme");
+      } else {
+        documentRoot.setAttribute("data-admin-theme", previousTheme);
+      }
+    };
+  }, [builderMode]);
+
   return (
     <div
-      className={`admin-shell ${collapsed ? "sidebar-collapsed" : ""} ${
-        builderMode ? "admin-builder-mode" : ""
-      }`}
+      ref={shellRef}
+      className={`admin-shell ${
+        collapsed ? "sidebar-collapsed" : ""
+      } ${builderMode ? "admin-builder-mode" : ""}`}
     >
       {!builderMode && (
         <AdminSidebar
@@ -51,17 +107,22 @@ function AdminLayoutFrame({
         {!builderMode && (
           <AdminTopbar
             user={user}
-            onMenuToggle={() => setMobileOpen((current) => !current)}
+            onMenuToggle={() =>
+              setMobileOpen((current) => !current)
+            }
           />
         )}
 
-        <main className="admin-page-content">{children}</main>
+        <main className={builderMode ? "admin-builder-content" : "admin-page-content"}>{children}</main>
       </div>
     </div>
   );
 }
 
-function AdminLayoutContent({ children, user }: AdminLayoutProps) {
+function AdminLayoutContent({
+  children,
+  user,
+}: AdminLayoutProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -72,10 +133,9 @@ function AdminLayoutContent({ children, user }: AdminLayoutProps) {
   const isHeaderFooterRoute =
     /^\/admin\/appearance\/(header|footer)-builder\/?$/.test(pathname);
 
-  // The manager/list route keeps the normal admin shell. Once a template ID
-  // is selected, the visual editor takes over the viewport without sidebar/topbar.
   const isHeaderFooterEditor =
-    isHeaderFooterRoute && Boolean(searchParams.get("id")?.trim());
+    isHeaderFooterRoute &&
+    Boolean(searchParams.get("id")?.trim());
 
   return (
     <AdminLayoutFrame
@@ -88,9 +148,6 @@ function AdminLayoutContent({ children, user }: AdminLayoutProps) {
 }
 
 export default function AdminLayout(props: AdminLayoutProps) {
-  // useSearchParams is isolated behind Suspense for Next.js App Router.
-  // The fallback intentionally shows the standard admin shell until the URL
-  // query is resolved; the ?id= editor view then switches to full-screen.
   return (
     <Suspense
       fallback={

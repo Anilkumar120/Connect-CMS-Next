@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   useCallback,
@@ -57,6 +57,8 @@ import {
   Move,
   Menu,
   Image as ImageIcon,
+  Video,
+  Music,
   X,
   Download,
   FileUp,
@@ -81,6 +83,7 @@ import BuilderRichTextEditor from "@/components/admin/BuilderRichTextEditor";
 import BannerSlider, {
   type BannerSliderSlide,
 } from "@/components/public/BannerSlider";
+import BuilderVideoPlayer from "@/components/public/BuilderVideoPlayer";
 import { themeIcons, themeIconLabels } from "@/components/public/theme-icons";
 import {
   builderSpacingCss,
@@ -203,6 +206,8 @@ type MediaTarget =
   | "backgroundOverlay"
   | "hoverBackgroundOverlay"
   | "videoPoster"
+  | "videoFile"
+  | "audioFile"
   | "slideBackground"
   | "slideButtonIcon"
   | "carouselItem"
@@ -886,6 +891,23 @@ function getNodeInlineStyle(
   put("bottom", getResponsiveValue(s.bottom, device));
   put("left", getResponsiveValue(s.left, device));
 
+  // Motion > Sticky has priority over normal positioning controls.
+  if (s.motion?.sticky) {
+    const stickyOffset = `${Math.max(0, Number(s.motion.stickyOffset ?? 0) || 0)}px`;
+    style.position = "sticky";
+    if (s.motion.stickyPosition === "bottom") {
+      style.bottom = stickyOffset;
+      style.top = undefined;
+    } else {
+      style.top = stickyOffset;
+      style.bottom = undefined;
+    }
+    if (style.zIndex === undefined) style.zIndex = 1000;
+  } else if (style.position === "sticky") {
+    if (style.top === undefined && style.bottom === undefined) style.top = "0px";
+    if (style.zIndex === undefined) style.zIndex = 1000;
+  }
+
   const typography = s.typography;
 
   if (typography) {
@@ -1113,6 +1135,16 @@ function getCanvasFlexItemStyle(
     alignSelf: style.alignSelf,
     boxSizing: "border-box",
   };
+
+  // Sticky is applied to the sortable outer node so it can remain at the
+  // top of the canvas scrollport while the sample page content moves below.
+  if (style.position === "sticky") {
+    result.position = "sticky";
+    result.top = style.top ?? "0px";
+    result.bottom = style.bottom;
+    result.zIndex = Number(style.zIndex ?? 1000);
+    result.alignSelf = "stretch";
+  }
 
   if (!parentNode || !LAYOUT_TYPES.has(node.type)) return result;
 
@@ -2284,35 +2316,50 @@ function PreviewNode({
   }
 
   if (node.type === "video") {
-    const url = safeMediaUrl(String(props.url || ""));
-
-    if (!url) {
-      return (
-        <div className={styles.imagePlaceholder}>
-          <span>Select a video URL</span>
-        </div>
-      );
-    }
-
     return (
-      <video
-        {...commonProps}
-        src={url}
-        poster={
-          typeof props.poster === "string"
-            ? safeMediaUrl(props.poster)
-            : undefined
-        }
-        controls={props.controls !== false}
-        autoPlay={Boolean(props.autoplay)}
+      <BuilderVideoPlayer
+        id={node.advanced?.cssId || undefined}
+        className={advancedClass || undefined}
+        nodeId={node.id}
+        preview
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        source={String(props.source || "auto")}
+        url={String(props.url || "")}
+        poster={String(props.poster || "")}
+        startTime={props.startTime as number | string | undefined}
+        endTime={props.endTime as number | string | undefined}
+        autoplay={Boolean(props.autoplay)}
+        playOnMobile={Boolean(props.playOnMobile)}
         muted={Boolean(props.muted)}
         loop={Boolean(props.loop)}
-        playsInline
-        style={{
-          ...inlineStyle,
-          width: "100%",
-          maxWidth: "100%",
-        }}
+        controls={props.controls !== false}
+        captions={Boolean(props.captions)}
+        captionsUrl={String(props.captionsUrl || "")}
+        captionsLanguage={String(props.captionsLanguage || "en")}
+        captionsLabel={String(props.captionsLabel || "Captions")}
+        privacyMode={Boolean(props.privacyMode)}
+        lazyLoad={props.lazyLoad !== false}
+        suggestedVideos={String(props.suggestedVideos || "any")}
+        modestBranding={Boolean(props.modestBranding)}
+        showTitle={props.showTitle !== false}
+        showPortrait={props.showPortrait !== false}
+        showByline={props.showByline !== false}
+        showInfo={props.showInfo !== false}
+        showLogo={props.showLogo !== false}
+        controlsColor={String(props.controlsColor || "")}
+        downloadButton={props.downloadButton !== false}
+        preload={String(props.preload || "metadata")}
+        imageOverlay={Boolean(props.imageOverlay)}
+        playIcon={props.playIcon !== false}
+        lightbox={Boolean(props.lightbox)}
+        aspectRatio={String(props.aspectRatio || "16:9")}
+        objectFit={String(props.objectFit || "cover")}
+        overlayOpacity={props.overlayOpacity as number | string | undefined}
+        overlayColor={String(props.overlayColor || "#000000")}
+        playIconColor={String(props.playIconColor || "#ffffff")}
+        playIconSize={props.playIconSize as number | string | undefined}
+        style={inlineStyle}
       />
     );
   }
@@ -2323,9 +2370,10 @@ function PreviewNode({
         {...commonProps}
         src={String(props.url || "")}
         controls={props.controls !== false}
-        style={{
-          width: "100%",
-        }}
+        autoPlay={Boolean(props.autoplay)}
+        loop={Boolean(props.loop)}
+        preload={( ["auto", "metadata", "none"].includes(String(props.preload)) ? props.preload : "metadata") as "auto" | "metadata" | "none"}
+        style={{ ...inlineStyle, width: inlineStyle.width || "100%" }}
       />
     );
   }
@@ -2783,7 +2831,7 @@ function PreviewNode({
         </ul>
 
         {menuItems.length === 0 && (
-          <span>Menu preview · {String(props.menuLocation || "HEADER")}</span>
+          <span>Menu preview Â· {String(props.menuLocation || "HEADER")}</span>
         )}
       </nav>
     );
@@ -3004,8 +3052,8 @@ function PreviewNode({
 
     return (
       <div {...commonProps}>
-        {"★".repeat(Math.round(rating))}
-        {"☆".repeat(maximum - Math.round(rating))}
+        {"â˜…".repeat(Math.round(rating))}
+        {"â˜†".repeat(maximum - Math.round(rating))}
       </div>
     );
   }
@@ -3036,7 +3084,7 @@ function PreviewNode({
       >
         <h3>{String(props.title || "Plan")}</h3>
         <strong style={{ fontSize: 30 }}>
-          {String(props.currency || "₹")}
+          {String(props.currency || "â‚¹")}
           {String(props.price || "0")}
         </strong>
         <small> / {String(props.period || "month")}</small>
@@ -3429,7 +3477,7 @@ function SortableCanvasNode({
         <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 7 }}>
           <span>
             {node.label}
-            {locked ? " 🔒" : ""}
+            {locked ? " ðŸ”’" : ""}
             {!node.enabled ? " (Hidden)" : ""}
           </span>
           {(() => {
@@ -4730,8 +4778,9 @@ export default function UniversalBuilder({ target }: Props) {
           ? result.items
           : [];
 
+      const expectedMime = mediaType === "videoFile" ? "video/" : mediaType === "audioFile" ? "audio/" : "image/";
       setMediaItems(
-        items.filter((item: MediaItem) => item.mimeType?.startsWith("image/")),
+        items.filter((item: MediaItem) => item.mimeType?.startsWith(expectedMime)),
       );
     } catch (err) {
       setError(
@@ -4765,6 +4814,30 @@ export default function UniversalBuilder({ target }: Props) {
 
     commitRoot(
       updateTree(layout.root, selectedId, (node) => {
+        if (mediaTarget === "videoFile") {
+          return {
+            ...node,
+            props: {
+              ...node.props,
+              source: "self-hosted",
+              url: mediaUrl,
+              mediaId: item.id,
+            },
+          };
+        }
+
+        if (mediaTarget === "audioFile") {
+          return {
+            ...node,
+            props: {
+              ...node.props,
+              source: "self-hosted",
+              url: mediaUrl,
+              mediaId: item.id,
+            },
+          };
+        }
+
         if (mediaTarget === "background") {
           return {
             ...node,
@@ -5497,14 +5570,14 @@ export default function UniversalBuilder({ target }: Props) {
 
           {node.type === "text" && (
             <>
-              <Field label="Text Content — Visual Editor">
+              <Field label="Text Content â€” Visual Editor">
                 <BuilderRichTextEditor
                   value={String(node.props.content || "")}
                   onChange={(value) => updateProps("content", value)}
                 />
               </Field>
               <p style={{ margin: "-2px 0 12px", color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
-                Use the Code button in the editor toolbar to edit HTML. For widget-specific CSS, use Advanced → Custom CSS; the selector is scoped to this widget.
+                Use the Code button in the editor toolbar to edit HTML. For widget-specific CSS, use Advanced â†’ Custom CSS; the selector is scoped to this widget.
               </p>
             </>
           )}
@@ -5581,7 +5654,7 @@ export default function UniversalBuilder({ target }: Props) {
                     const SelectedIcon = themeIcons[String(node.props.iconName || "")];
                     return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />;
                   })()}
-                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon â€” choose icon")}
                 </button>
               </Field>
 
@@ -5770,93 +5843,134 @@ export default function UniversalBuilder({ target }: Props) {
             </>
           )}
 
-          {["video", "audio", "lottie"].includes(node.type) && (
+          {node.type === "video" && (
             <>
-              <TextControl
-                label="Media URL"
-                value={String(node.props.url || "")}
-                onChange={(value) => updateProps("url", value)}
-              />
-              {node.props.url ? (
-                <button
-                  type="button"
-                  style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 10, color: "#b42318" }}
-                  onClick={() => clearProps("url", "mediaId")}
-                >
-                  <X size={15} /> Remove Media Reference
-                </button>
-              ) : null}
+              <ControlGroup title="Video Source" defaultOpen>
+                <SelectControl
+                  label="Source"
+                  value={["auto", "youtube", "vimeo", "dailymotion", "videopress", "self-hosted"].includes(String(node.props.source || "auto")) ? String(node.props.source || "auto") : "auto"}
+                  options={[
+                    { label: "Auto Detect", value: "auto" },
+                    { label: "YouTube", value: "youtube" },
+                    { label: "Vimeo", value: "vimeo" },
+                    { label: "Dailymotion", value: "dailymotion" },
+                    { label: "VideoPress", value: "videopress" },
+                    { label: "Self Hosted", value: "self-hosted" },
+                  ]}
+                  onChange={(value) => updateProps("source", value)}
+                />
+                <TextControl
+                  label="Video Link / File URL"
+                  value={String(node.props.url || "")}
+                  onChange={(value) => updateProps("url", value)}
+                  placeholder="YouTube, Vimeo or .mp4 URL"
+                />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 10 }}>
+                  <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => void openMediaLibrary("videoFile")}>
+                    <Video size={14} /> Choose Video
+                  </button>
+                  <Link href="/admin/media" target="_blank" rel="noopener noreferrer" style={{ ...BUTTON_STYLE, width: "100%", textDecoration: "none" }}>
+                    <Upload size={14} /> Upload Video
+                  </Link>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 10 }}>
+                  <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => void openMediaLibrary("videoPoster")}>
+                    <ImageIcon size={14} /> Choose Poster
+                  </button>
+                  <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => openImageUpload("videoPoster")}>
+                    <Upload size={14} /> Upload Poster
+                  </button>
+                </div>
+                {node.props.url ? (
+                  <button type="button" style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 10, color: "#b42318" }} onClick={() => clearProps("url", "mediaId")}>
+                    <X size={15} /> Remove Video
+                  </button>
+                ) : null}
+                <TextControl label="Start Time (seconds)" type="number" value={String(node.props.startTime ?? "")} onChange={(value) => updateProps("startTime", value === "" ? "" : Math.max(0, Number(value) || 0))} />
+                <TextControl label="End Time (seconds)" type="number" value={String(node.props.endTime ?? "")} onChange={(value) => updateProps("endTime", value === "" ? "" : Math.max(0, Number(value) || 0))} />
+                <TextControl label="Poster Image URL" value={String(node.props.poster || "")} onChange={(value) => updateProps("poster", value)} />
+                {node.props.poster ? (
+                  <button type="button" style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 10, color: "#b42318" }} onClick={() => clearProps("poster", "posterMediaId")}>
+                    <X size={15} /> Remove Poster
+                  </button>
+                ) : null}
+                <p style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5, margin: "6px 0 0" }}>
+                  Upload MP4, WebM or MOV files in Admin Ã¢â€ â€™ Media, then choose them here.
+                </p>
+              </ControlGroup>
 
-              {node.type === "video" && (
-                <>
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                    <button
-                      type="button"
-                      style={{ ...BUTTON_STYLE, flex: 1 }}
-                      onClick={() => void openMediaLibrary("videoPoster")}
-                    >
-                      Choose Poster
-                    </button>
-                    <button
-                      type="button"
-                      style={{ ...BUTTON_STYLE, flex: 1 }}
-                      onClick={() => openImageUpload("videoPoster")}
-                    >
-                      Upload Poster
-                    </button>
-                  </div>
-                  <TextControl
-                    label="Poster Image URL"
-                    value={String(node.props.poster || "")}
-                    onChange={(value) => updateProps("poster", value)}
-                  />
-                  {node.props.poster ? (
-                    <button
-                      type="button"
-                      style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 10, color: "#b42318" }}
-                      onClick={() => clearProps("poster", "posterMediaId")}
-                    >
-                      <X size={15} /> Remove Poster Reference
-                    </button>
-                  ) : null}
+              <ControlGroup title="Playback Settings" defaultOpen>
+                {([
+                  ["autoplay", "Autoplay", false],
+                  ["playOnMobile", "Play on Mobile", false],
+                  ["muted", "Mute", false],
+                  ["loop", "Loop", false],
+                  ["controls", "Player Controls", true],
+                  ["captions", "Captions", false],
+                  ["privacyMode", "Privacy Mode", false],
+                  ["lazyLoad", "Lazy Load", true],
+                ] as const).map(([key, label, defaultValue]) => (
+                  <Field key={key} label={label}>
+                    <input type="checkbox" checked={node.props[key] === undefined ? defaultValue : Boolean(node.props[key])} onChange={(event) => updateProps(key, event.target.checked)} />
+                  </Field>
+                ))}
+                <SelectControl label="Suggested Videos" value={String(node.props.suggestedVideos || "any")} options={[{ label: "Any Videos", value: "any" }, { label: "Current Channel", value: "current-channel" }]} onChange={(value) => updateProps("suggestedVideos", value)} />
+                <Field label="Modest Branding"><input type="checkbox" checked={Boolean(node.props.modestBranding)} onChange={(event) => updateProps("modestBranding", event.target.checked)} /></Field>
+                <Field label="Show Video Title"><input type="checkbox" checked={node.props.showTitle !== false} onChange={(event) => updateProps("showTitle", event.target.checked)} /></Field>
+                <Field label="Show Creator Portrait"><input type="checkbox" checked={node.props.showPortrait !== false} onChange={(event) => updateProps("showPortrait", event.target.checked)} /></Field>
+                <Field label="Show Creator Byline"><input type="checkbox" checked={node.props.showByline !== false} onChange={(event) => updateProps("showByline", event.target.checked)} /></Field>
+                <Field label="Show Dailymotion Info"><input type="checkbox" checked={node.props.showInfo !== false} onChange={(event) => updateProps("showInfo", event.target.checked)} /></Field>
+                <Field label="Show Dailymotion Logo"><input type="checkbox" checked={node.props.showLogo !== false} onChange={(event) => updateProps("showLogo", event.target.checked)} /></Field>
+                <TextControl label="Captions File URL (.vtt)" value={String(node.props.captionsUrl || "")} onChange={(value) => updateProps("captionsUrl", value)} />
+                <TextControl label="Captions Language" value={String(node.props.captionsLanguage || "en")} onChange={(value) => updateProps("captionsLanguage", value)} />
+                <TextControl label="Captions Label" value={String(node.props.captionsLabel || "Captions")} onChange={(value) => updateProps("captionsLabel", value)} />
+                <Field label="Show Download Button"><input type="checkbox" checked={node.props.downloadButton !== false} onChange={(event) => updateProps("downloadButton", event.target.checked)} /></Field>
+                <SelectControl label="Preload" value={String(node.props.preload || "metadata")} options={[{ label: "Metadata", value: "metadata" }, { label: "Auto", value: "auto" }, { label: "None", value: "none" }]} onChange={(value) => updateProps("preload", value)} />
+              </ControlGroup>
 
-                  {(["controls", "autoplay", "muted", "loop"] as const).map(
-                    (key) => (
-                      <Field key={key} label={key}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(node.props[key])}
-                          onChange={(event) =>
-                            updateProps(key, event.target.checked)
-                          }
-                        />
-                      </Field>
-                    ),
-                  )}
-                </>
-              )}
-              {node.type === "audio" && (
-                <>
-                  <TextControl label="Audio Title" value={String(node.props.title || "")} onChange={(value) => updateProps("title", value)} />
-                  {(["controls", "autoplay", "loop"] as const).map((key) => (
-                    <Field key={key} label={key[0].toUpperCase() + key.slice(1)}>
-                      <input type="checkbox" checked={key === "controls" ? node.props.controls !== false : Boolean(node.props[key])} onChange={(event) => updateProps(key, event.target.checked)} />
-                    </Field>
-                  ))}
-                </>
-              )}
-              {node.type === "lottie" && (
-                <>
-                  <Field label="Loop Animation"><input type="checkbox" checked={node.props.loop !== false} onChange={(event) => updateProps("loop", event.target.checked)} /></Field>
-                  <Field label="Autoplay"><input type="checkbox" checked={node.props.autoplay !== false} onChange={(event) => updateProps("autoplay", event.target.checked)} /></Field>
-                  <SelectControl label="Renderer" value={String(node.props.renderer || "svg")} options={["svg", "canvas", "html"].map((value) => ({ label: value.toUpperCase(), value }))} onChange={(value) => updateProps("renderer", value)} />
-                  <p style={{ color: "#64748b", fontSize: 12 }}>The URL must point to a Lottie JSON animation file. Public playback requires the Lottie player package to be configured in the site.</p>
-                </>
-              )}
+              <ControlGroup title="Image Overlay" defaultOpen>
+                <Field label="Enable Image Overlay"><input type="checkbox" checked={Boolean(node.props.imageOverlay)} onChange={(event) => updateProps("imageOverlay", event.target.checked)} /></Field>
+                <Field label="Show Play Icon"><input type="checkbox" checked={node.props.playIcon !== false} onChange={(event) => updateProps("playIcon", event.target.checked)} /></Field>
+                <Field label="Open in Lightbox"><input type="checkbox" checked={Boolean(node.props.lightbox)} onChange={(event) => updateProps("lightbox", event.target.checked)} /></Field>
+              </ControlGroup>
             </>
           )}
 
-          {node.type === "site-title" && (
+          {node.type === "audio" && (
+            <>
+              <TextControl label="Audio File URL" value={String(node.props.url || "")} onChange={(value) => updateProps("url", value)} placeholder="MP3, WAV, OGG or M4A URL" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 10 }}>
+                <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => void openMediaLibrary("audioFile")}>
+                  <Music size={14} /> Choose Audio
+                </button>
+                <Link href="/admin/media" target="_blank" rel="noopener noreferrer" style={{ ...BUTTON_STYLE, width: "100%", textDecoration: "none" }}>
+                  <Upload size={14} /> Upload Audio
+                </Link>
+              </div>
+              {node.props.url ? (
+                <button type="button" style={{ ...BUTTON_STYLE, width: "100%", marginBottom: 10, color: "#b42318" }} onClick={() => clearProps("url", "mediaId")}>
+                  <X size={15} /> Remove Audio
+                </button>
+              ) : null}
+              <TextControl label="Audio Title" value={String(node.props.title || "")} onChange={(value) => updateProps("title", value)} />
+              {(["controls", "autoplay", "loop"] as const).map((key) => (
+                <Field key={key} label={key[0].toUpperCase() + key.slice(1)}>
+                  <input type="checkbox" checked={key === "controls" ? node.props.controls !== false : Boolean(node.props[key])} onChange={(event) => updateProps(key, event.target.checked)} />
+                </Field>
+              ))}
+              <SelectControl label="Preload" value={String(node.props.preload || "metadata")} options={[{ label: "Metadata", value: "metadata" }, { label: "Auto", value: "auto" }, { label: "None", value: "none" }]} onChange={(value) => updateProps("preload", value)} />
+            </>
+          )}
+
+          {node.type === "lottie" && (
+            <>
+              <TextControl label="Lottie JSON URL" value={String(node.props.url || "")} onChange={(value) => updateProps("url", value)} />
+              <Field label="Loop Animation"><input type="checkbox" checked={node.props.loop !== false} onChange={(event) => updateProps("loop", event.target.checked)} /></Field>
+              <Field label="Autoplay"><input type="checkbox" checked={node.props.autoplay !== false} onChange={(event) => updateProps("autoplay", event.target.checked)} /></Field>
+              <SelectControl label="Renderer" value={String(node.props.renderer || "svg")} options={["svg", "canvas", "html"].map((value) => ({ label: value.toUpperCase(), value }))} onChange={(value) => updateProps("renderer", value)} />
+              <p style={{ color: "#64748b", fontSize: 12 }}>The URL must point to a Lottie JSON animation file.</p>
+            </>
+          )}          {node.type === "site-title" && (
             <>
               <TextControl
                 label="Site Title"
@@ -5917,7 +6031,7 @@ export default function UniversalBuilder({ target }: Props) {
               <Field label="Icon Library">
                 <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
                   {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
-                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon â€” choose icon")}
                 </button>
               </Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
@@ -5930,7 +6044,7 @@ export default function UniversalBuilder({ target }: Props) {
               <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
               <TextControl
                 label="Icon Symbol"
-                value={String(node.props.symbol ?? "★")}
+                value={String(node.props.symbol ?? "â˜…")}
                 onChange={(value) => updateProps("symbol", value)}
               />
               <TextControl
@@ -6077,7 +6191,7 @@ export default function UniversalBuilder({ target }: Props) {
           {node.type === "price-table" && (
             <ControlGroup title="Pricing Content" defaultOpen>
               <TextControl label="Plan Title" value={String(node.props.title || "Basic Plan")} onChange={(value) => updateProps("title", value)} />
-              <TextControl label="Currency" value={String(node.props.currency || "₹")} onChange={(value) => updateProps("currency", value)} />
+              <TextControl label="Currency" value={String(node.props.currency || "â‚¹")} onChange={(value) => updateProps("currency", value)} />
               <TextControl label="Price" value={String(node.props.price || "")} onChange={(value) => updateProps("price", value)} />
               <TextControl label="Billing Period" value={String(node.props.period || "month")} onChange={(value) => updateProps("period", value)} />
               <Field label="Features (one per line)"><textarea rows={7} value={Array.isArray(node.props.features) ? (node.props.features as string[]).join("\n") : ""} onChange={(event) => updateProps("features", event.target.value.split("\n").map((value) => value.trim()).filter(Boolean))} style={CONTROL_STYLE} /></Field>
@@ -6259,7 +6373,7 @@ export default function UniversalBuilder({ target }: Props) {
                 <UnitControl label="Mobile Menu Width" value={String(deviceProps.mobileWidth || "320px")} onChange={(value) => updateResponsiveProp("mobileWidth", value)} />
                 <UnitControl label="Mobile Icon Size" value={String(deviceProps.mobileIconSize || "24px")} onChange={(value) => updateResponsiveProp("mobileIconSize", value)} allowAuto={false} />
               </ControlGroup>
-              <p style={{ color: "#64748b", fontSize: 12, margin: "8px 0 0" }}>Menu pages and Custom Links are managed under Admin → Menus. Select that menu above to load its saved structure.</p>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "8px 0 0" }}>Menu pages and Custom Links are managed under Admin â†’ Menus. Select that menu above to load its saved structure.</p>
             </>
           )}
 
@@ -6357,7 +6471,7 @@ export default function UniversalBuilder({ target }: Props) {
               <Field label="Icon Library">
                 <button type="button" style={{ ...BUTTON_STYLE, width: "100%" }} onClick={() => setIconPickerTarget({ kind: "widget", value: String(node.props.iconName || "") })}>
                   {(() => { const SelectedIcon = themeIcons[String(node.props.iconName || "")]; return SelectedIcon ? <SelectedIcon size={16} /> : <Search size={16} />; })()}
-                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon — choose icon")}
+                  {String(themeIconLabels[String(node.props.iconName || "")] || node.props.iconName || "No Icon â€” choose icon")}
                 </button>
               </Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
@@ -6367,7 +6481,7 @@ export default function UniversalBuilder({ target }: Props) {
               {node.props.iconImage ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><img src={safeMediaUrl(String(node.props.iconImage))} alt="" style={{ width: 42, height: 42, objectFit: "contain" }} /><button type="button" style={BUTTON_STYLE} onClick={() => clearProps("iconImage", "iconImageId")}>Remove image</button></div> : null}
               <TextControl
                 label="Icon Symbol"
-                value={String(node.props.symbol ?? "★")}
+                value={String(node.props.symbol ?? "â˜…")}
                 onChange={(value) => updateProps("symbol", value)}
               />
 
@@ -6431,7 +6545,7 @@ export default function UniversalBuilder({ target }: Props) {
                               {entry.iconImage ? <img src={safeMediaUrl(String(entry.iconImage))} alt="" style={{ width: 40, height: 40, objectFit: "contain" }} /> : (() => { const iconName = typeof entry.iconName === "string" ? entry.iconName : "Check"; const IconPreview = iconName ? themeIcons[iconName] : null; return IconPreview ? <IconPreview size={30} color={String(node.props.iconColor || "#3984e8")} /> : <span style={{ color: "#94a3b8", fontSize: 11 }}>No Icon</span>; })()}
                             </div>
                             <div style={{ display: "grid", gap: 6 }}>
-                              <button type="button" style={BUTTON_STYLE} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "items", value: String(entry.iconName ?? "Check") })}>{String(themeIconLabels[String(entry.iconName || "")] || entry.iconName || "No Icon — choose icon")}</button>
+                              <button type="button" style={BUTTON_STYLE} onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: "items", value: String(entry.iconName ?? "Check") })}>{String(themeIconLabels[String(entry.iconName || "")] || entry.iconName || "No Icon â€” choose icon")}</button>
                               <button type="button" style={BUTTON_STYLE} onClick={() => void openMediaLibrary("repeaterIcon", index)}><ImageIcon size={14} /> Media Library</button>
                               <button type="button" style={BUTTON_STYLE} onClick={() => openImageUpload("repeaterIcon", index)}><Upload size={14} /> Upload Image</button>
                             </div>
@@ -6599,7 +6713,7 @@ export default function UniversalBuilder({ target }: Props) {
                         disabled={slideIndex === 0}
                         onClick={() => moveSlide(slideIndex, -1)}
                       >
-                        ↑ Move Up
+                        â†‘ Move Up
                       </button>
                       <button
                         type="button"
@@ -6607,7 +6721,7 @@ export default function UniversalBuilder({ target }: Props) {
                         disabled={slideIndex === slideEntries.length - 1}
                         onClick={() => moveSlide(slideIndex, 1)}
                       >
-                        ↓ Move Down
+                        â†“ Move Down
                       </button>
                     </div>
                     <TextControl
@@ -6685,7 +6799,7 @@ export default function UniversalBuilder({ target }: Props) {
                       />
                     </div>
                     <TextControl
-                      label="Overlay Opacity (0–1)"
+                      label="Overlay Opacity (0â€“1)"
                       type="number"
                       value={String(slide.overlayOpacity ?? 0)}
                       onChange={(value) => updateSlide(slideIndex, "overlayOpacity", Math.max(0, Math.min(1, Number(value) || 0)))}
@@ -6746,7 +6860,7 @@ export default function UniversalBuilder({ target }: Props) {
                               })
                             }
                           >
-                            {String(button.iconName || "No Icon — choose icon")}
+                            {String(button.iconName || "No Icon â€” choose icon")}
                           </button>
                           <SelectControl
                             label="Link Type"
@@ -7524,6 +7638,28 @@ export default function UniversalBuilder({ target }: Props) {
 
     return (
       <>
+        {node.type === "video" ? (
+          <ControlGroup title="Video Player Styling" defaultOpen>
+            <SelectControl
+              label="Aspect Ratio"
+              value={String(deviceProps.aspectRatio || "16:9")}
+              options={["16:9", "4:3", "1:1", "3:2", "9:16", "21:9"].map((value) => ({ label: value, value }))}
+              onChange={(value) => updateResponsiveProp("aspectRatio", value)}
+            />
+            <SelectControl
+              label="Object Fit"
+              value={String(deviceProps.objectFit || "cover")}
+              options={["cover", "contain", "fill"].map((value) => ({ label: value, value }))}
+              onChange={(value) => updateResponsiveProp("objectFit", value)}
+            />
+            <ColorControl label="Overlay Color" value={String(deviceProps.overlayColor || "#000000")} onChange={(value) => updateResponsiveProp("overlayColor", value)} />
+            <TextControl label="Overlay Opacity" type="number" value={String(deviceProps.overlayOpacity ?? 0.28)} onChange={(value) => updateResponsiveProp("overlayOpacity", Math.max(0, Math.min(1, Number(value) || 0)))} />
+            <ColorControl label="Play Icon Color" value={String(deviceProps.playIconColor || "#ffffff")} onChange={(value) => updateResponsiveProp("playIconColor", value)} />
+            <UnitControl label="Play Icon Size" value={String(deviceProps.playIconSize || "64px")} onChange={(value) => updateResponsiveProp("playIconSize", value)} allowAuto={false} />
+            <ColorControl label="Embedded Controls Color" value={String(deviceProps.controlsColor || "#3984e8")} onChange={(value) => updateResponsiveProp("controlsColor", value)} />
+          </ControlGroup>
+        ) : null}
+
         {node.type === "menu" ? (
           <>
             <ControlGroup title="Navigation Menu Item Colors" defaultOpen>
@@ -7600,12 +7736,12 @@ export default function UniversalBuilder({ target }: Props) {
             </ControlGroup>
 
             <ControlGroup title="Mobile Menu Toggle & Icons">
-              <ColorControl label="Toggle Icon — Normal" value={String(deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
-              <ColorControl label="Toggle Icon — Hover" value={String(deviceProps.toggleHoverIconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("toggleHoverIconColor", value)} />
-              <ColorControl label="Toggle Background — Normal" value={String(deviceProps.toggleBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleBackgroundColor", value)} />
-              <ColorControl label="Toggle Background — Hover" value={String(deviceProps.toggleHoverBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleHoverBackgroundColor", value)} />
-              <ColorControl label="Close Icon — Normal" value={String(deviceProps.closeIconColor || deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("closeIconColor", value)} />
-              <ColorControl label="Close Icon — Hover" value={String(deviceProps.closeIconHoverColor || "#3984e8")} onChange={(value) => updateResponsiveProp("closeIconHoverColor", value)} />
+              <ColorControl label="Toggle Icon â€” Normal" value={String(deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+              <ColorControl label="Toggle Icon â€” Hover" value={String(deviceProps.toggleHoverIconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("toggleHoverIconColor", value)} />
+              <ColorControl label="Toggle Background â€” Normal" value={String(deviceProps.toggleBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleBackgroundColor", value)} />
+              <ColorControl label="Toggle Background â€” Hover" value={String(deviceProps.toggleHoverBackgroundColor || "transparent")} onChange={(value) => updateResponsiveProp("toggleHoverBackgroundColor", value)} />
+              <ColorControl label="Close Icon â€” Normal" value={String(deviceProps.closeIconColor || deviceProps.iconColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("closeIconColor", value)} />
+              <ColorControl label="Close Icon â€” Hover" value={String(deviceProps.closeIconHoverColor || "#3984e8")} onChange={(value) => updateResponsiveProp("closeIconHoverColor", value)} />
             </ControlGroup>
           </>
         ) : null}
@@ -8449,6 +8585,19 @@ export default function UniversalBuilder({ target }: Props) {
               })
             }
           />
+          {node.styles.motion?.sticky ? (
+            <TextControl
+              label="Sticky Offset (px)"
+              type="number"
+              value={String(node.styles.motion.stickyOffset ?? 0)}
+              onChange={(value) =>
+                updateSimpleStyle("motion", {
+                  ...(node.styles.motion || {}),
+                  stickyOffset: Math.max(0, Number(value) || 0),
+                })
+              }
+            />
+          ) : null}
         </ControlGroup>
 
         <ControlGroup title="Display Conditions">
@@ -8647,21 +8796,30 @@ export default function UniversalBuilder({ target }: Props) {
     const statusText = template
       ? template.status === "PUBLISHED"
         ? "Published"
-        : "Draft · not visible publicly until published"
+        : "Draft Â· not visible publicly until published"
       : "No saved template yet";
+    const stickyHeaderNode = isHeader
+      ? nodes.find((node) => getNodeInlineStyle(node, device).position === "sticky")
+      : undefined;
+    const stickyHeaderStyle = stickyHeaderNode
+      ? getNodeInlineStyle(stickyHeaderNode, device)
+      : {};
 
     return (
       <div
         data-global-template-preview={label.toLowerCase()}
         style={{
-          position: "relative",
+          position: stickyHeaderNode ? "sticky" : "relative",
+          top: stickyHeaderNode ? stickyHeaderStyle.top ?? "0px" : undefined,
+          bottom: stickyHeaderNode ? stickyHeaderStyle.bottom : undefined,
+          zIndex: stickyHeaderNode ? Number(stickyHeaderStyle.zIndex ?? 1000) : undefined,
           width: "100%",
           minWidth: 0,
           boxSizing: "border-box",
           margin: isHeader ? "0 0 12px" : "12px 0 0",
           border: "1px dashed #94a3b8",
           background: "#ffffff",
-          overflow: "hidden",
+          overflow: "visible",
         }}
       >
         <div
@@ -8680,7 +8838,7 @@ export default function UniversalBuilder({ target }: Props) {
             textTransform: "uppercase",
           }}
         >
-          Global {label} · {template?.title || "Header/Footer Builder"} · {statusText}
+          Global {label} Â· {template?.title || "Header/Footer Builder"} Â· {statusText}
         </div>
 
         {nodes.length ? (
@@ -8702,7 +8860,7 @@ export default function UniversalBuilder({ target }: Props) {
           </div>
         ) : (
           <div style={{ padding: 12, color: "#64748b", fontSize: 12 }}>
-            Build and save the global {label.toLowerCase()} in Appearance → {label} Builder. It will appear around this page preview.
+            Build and save the global {label.toLowerCase()} in Appearance â†’ {label} Builder. It will appear around this page preview.
           </div>
         )}
       </div>
@@ -9262,7 +9420,7 @@ export default function UniversalBuilder({ target }: Props) {
             <div className={styles.canvasTopbar}>
               <span>{KIND_LABELS[target.kind]} Editor</span>
               <span className={styles.canvasHint}>
-                {device.toUpperCase()} · Select any element to edit; drag its box to move; right-click for actions
+                {device.toUpperCase()} Â· Select any element to edit; drag its box to move; right-click for actions
               </span>
               <button
                 type="button"
@@ -9338,6 +9496,27 @@ export default function UniversalBuilder({ target }: Props) {
                       ))}
                     </SortableContext>
                   )}
+                  {target.kind === "header" ? (
+                    <div className={styles.headerPagePreview} data-builder-preview-only="true">
+                      <div className={styles.headerPagePreviewNote}>
+                        SCROLL PREVIEW Â· Sample page content Â· Not saved in the Header template
+                      </div>
+                      <section className={styles.headerPagePreviewHero}>
+                        <span>CONNECT BROADBAND</span>
+                        <h2>Experience high-speed connectivity</h2>
+                        <p>Scroll this preview. A Sticky Top header should remain visible while this sample page moves underneath it.</p>
+                      </section>
+                      <div className={styles.headerPagePreviewCards}>
+                        <article><strong>Fast Fiber Internet</strong><p>Sample content to test the sticky header while scrolling the page.</p></article>
+                        <article><strong>Reliable Connectivity</strong><p>This preview is only for the editor and is never saved to your website.</p></article>
+                        <article><strong>Plans for Every Home</strong><p>Keep scrolling to confirm the header stays at the top of the preview.</p></article>
+                      </div>
+                      <div className={styles.headerPagePreviewLong}>
+                        <h3>Page scroll area</h3>
+                        <p>The Header template ends above. This sample area is intentionally tall so sticky behavior can be checked in the Builder canvas.</p>
+                      </div>
+                    </div>
+                  ) : null}
                 </DropArea>
 
                 {renderGlobalTemplatePreview("Footer", globalFooterPreview)}
@@ -9526,7 +9705,7 @@ export default function UniversalBuilder({ target }: Props) {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Media Library"
+            aria-label={mediaTarget === "videoFile" ? "Choose Video" : mediaTarget === "audioFile" ? "Choose Audio" : "Media Library"}
             style={{
               position: "fixed",
               inset: 0,
@@ -9560,14 +9739,14 @@ export default function UniversalBuilder({ target }: Props) {
                 }}
               >
                 <div>
-                  <strong>Media Library</strong>
+                  <strong>{mediaTarget === "videoFile" ? "Choose Video" : mediaTarget === "audioFile" ? "Choose Audio" : "Media Library"}</strong>
                   <div
                     style={{
                       fontSize: 12,
                       color: "#64748b",
                     }}
                   >
-                    Choose media for this element
+                    {mediaTarget === "videoFile" ? "Select a video from your Media Library" : mediaTarget === "audioFile" ? "Select audio from your Media Library" : "Choose media for this element"}
                   </div>
                 </div>
 
@@ -9673,6 +9852,10 @@ export default function UniversalBuilder({ target }: Props) {
                                   objectFit: "contain",
                                 }}
                               />
+                            ) : item.mimeType?.startsWith("video/") ? (
+                              <Video size={30} />
+                            ) : item.mimeType?.startsWith("audio/") ? (
+                              <Music size={30} />
                             ) : (
                               <ImageIcon size={30} />
                             )}
