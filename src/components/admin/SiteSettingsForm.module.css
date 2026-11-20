@@ -263,3 +263,112 @@
     margin-left: 0;
   }
 }
+
+/* WordPress-style custom permalink token editor. */
+.customPermalinkEditor {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.customStructureInput {
+  display: grid;
+  grid-template-columns: max-content minmax(240px, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.customStructureInput > span {
+  max-width: min(42vw, 320px);
+  overflow: hidden;
+  padding: 6px 8px;
+  color: #506176;
+  background: #eef2f6;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customStructureInput input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #aeb9c7;
+  border-radius: 4px;
+  color: #20334a;
+  background: #fff;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+}
+
+.permalinkTags {
+  display: grid;
+  gap: 10px;
+  color: #34445a;
+  font-size: 13px;
+}
+
+.permalinkTagButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permalinkTagButtons button {
+  min-height: 37px;
+  padding: 7px 13px;
+  border: 1px solid #315efb;
+  border-radius: 3px;
+  color: #1749d1;
+  background: #f6f8ff;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.permalinkTagButtons button:hover {
+  color: #fff;
+  background: #315efb;
+}
+
+.permalinkPreview {
+  display: grid;
+  gap: 6px;
+  padding: 13px 15px;
+  border: 1px solid #e1e7ef;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.permalinkPreview code {
+  overflow-wrap: anywhere;
+  color: #1d4ed8;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.permalinkPreview small {
+  color: #728096;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.field input:disabled {
+  color: #526174;
+  background: #f2f5f8;
+  cursor: not-allowed;
+}
+
+@media (max-width: 650px) {
+  .customStructureInput {
+    grid-template-columns: 1fr;
+  }
+
+  .customStructureInput > span {
+    max-width: 100%;
+  }
+}

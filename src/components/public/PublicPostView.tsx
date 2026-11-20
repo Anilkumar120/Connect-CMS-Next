@@ -1,8 +1,10 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { getPostHtml, sanitizePostHtml } from "@/lib/blog-content";
-import { formatSiteDateTime, type SiteSettings } from "@/lib/site-settings";
+import { formatSiteDateTime, getPostPermalink, type SiteSettings } from "@/lib/site-settings";
 import styles from "@/app/blog/Blog.module.css";
+import { getSeoContentMeta } from "@/lib/seo-manager";
+import SeoJsonLd from "@/components/public/SeoJsonLd";
 
 export type PublicPost = Prisma.PostGetPayload<{
   include: {
@@ -11,18 +13,32 @@ export type PublicPost = Prisma.PostGetPayload<{
   };
 }>;
 
-export default function PublicPostView({
+export default async function PublicPostView({
   post,
   settings,
 }: {
   post: PublicPost;
   settings: SiteSettings;
 }) {
-  const html = sanitizePostHtml(getPostHtml(post.content));
+  const [html, seoMeta] = await Promise.all([
+    Promise.resolve(sanitizePostHtml(getPostHtml(post.content))),
+    getSeoContentMeta("post", post.id),
+  ]);
+  const url = seoMeta.canonicalUrl || `${settings.general.siteAddress.replace(/\/$/, "")}${getPostPermalink(post, settings)}`;
   return (
     <div className={styles.page}>
+      <SeoJsonLd
+        schemaType={seoMeta.schemaType || "BlogPosting"}
+        title={post.title}
+        description={seoMeta.ogDescription || post.excerpt}
+        url={url}
+        image={seoMeta.ogImage || post.featuredImage}
+        siteName={settings.general.siteTitle}
+        publishedAt={post.publishedAt}
+        modifiedAt={post.updatedAt}
+      />
       <article className={styles.article}>
-        <Link className={styles.readMore} href="/blog">← All posts</Link>
+        <Link className={styles.readMore} href="/blog">â† All posts</Link>
         <h1 className={styles.articleTitle}>{post.title}</h1>
         <div className={styles.articleMeta}>
           {post.publishedAt && (

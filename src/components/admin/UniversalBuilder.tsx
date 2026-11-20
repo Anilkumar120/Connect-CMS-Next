@@ -3359,8 +3359,6 @@ function SortableCanvasNode({
   device,
   parentNode,
   onSelect,
-  onDelete,
-  onDuplicate,
   onContextMenu,
 }: {
   node: BuilderNode;
@@ -3368,21 +3366,14 @@ function SortableCanvasNode({
   device: BuilderDevice;
   parentNode?: BuilderNode | null;
   onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
-  onDuplicate: (node: BuilderNode) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
 }) {
   const locked = Boolean(node.locked || node.advanced?.locked);
-
   const sortable = useSortable({
     id: node.id,
     disabled: locked,
-    data: {
-      kind: "node",
-      nodeId: node.id,
-    },
+    data: { kind: "node", nodeId: node.id },
   });
-
   const selected = selectedId === node.id;
   const children = node.children || [];
   const isLayout = LAYOUT_TYPES.has(node.type);
@@ -3399,10 +3390,16 @@ function SortableCanvasNode({
       : layoutDisplay === "flex" && layoutDirection.startsWith("row")
         ? horizontalListSortingStrategy
         : verticalListSortingStrategy;
+  const widgetDefinition = BUILDER_WIDGETS.find((item) => item.type === node.type);
+  const NodeIcon = widgetDefinition
+    ? (LucideIcons[widgetDefinition.icon as keyof typeof LucideIcons] as typeof LayoutGrid)
+    : LayoutGrid;
 
   return (
     <div
       ref={sortable.setNodeRef}
+      {...sortable.attributes}
+      {...sortable.listeners}
       className={`${styles.canvasNode} ${
         selected ? styles.canvasNodeSelected : ""
       } ${sortable.isDragging ? styles.canvasNodeDragging : ""}`}
@@ -3411,13 +3408,12 @@ function SortableCanvasNode({
         transform: CSS.Transform.toString(sortable.transform),
         transition: sortable.transition,
         opacity: node.enabled ? 1 : 0.45,
+        cursor: locked ? "not-allowed" : sortable.isDragging ? "grabbing" : "grab",
+        touchAction: "pan-y",
       }}
       onClick={(event) => {
         event.stopPropagation();
-        if (
-          event.target instanceof Element &&
-          event.target.closest("a")
-        ) {
+        if (event.target instanceof Element && event.target.closest("a")) {
           event.preventDefault();
         }
         onSelect(node.id);
@@ -3428,18 +3424,8 @@ function SortableCanvasNode({
         onContextMenu(node.id, event.clientX, event.clientY);
       }}
     >
-      <div className={styles.nodeToolbar}>
-        <button
-          type="button"
-          className={styles.dragHandle}
-          title={locked ? "Element locked" : "Drag element"}
-          disabled={locked}
-          {...sortable.attributes}
-          {...sortable.listeners}
-        >
-          <Move size={13} />
-        </button>
-
+      <div className={styles.nodeToolbar} aria-label={`${node.label} element toolbar`}>
+        <NodeIcon size={13} aria-hidden="true" />
         <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 7 }}>
           <span>
             {node.label}
@@ -3467,37 +3453,11 @@ function SortableCanvasNode({
             );
           })()}
         </span>
-
-        <div className={styles.nodeActions}>
-          <button
-            type="button"
-            title="Duplicate"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDuplicate(node);
-            }}
-          >
-            <Copy size={13} />
-          </button>
-
-          <button
-            type="button"
-            title="Delete"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDelete(node.id);
-            }}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
       </div>
 
       {isLayout ? (
         <div
-          className={
-            node.type === "section" ? styles.previewSection : styles.nodePreview
-          }
+          className={node.type === "section" ? styles.previewSection : styles.nodePreview}
           style={getContainerPreviewStyle(node, device)}
         >
           <DropArea id={node.id} className={styles.nestedDropArea}>
@@ -3518,8 +3478,6 @@ function SortableCanvasNode({
                       device={device}
                       parentNode={node}
                       onSelect={onSelect}
-                      onDelete={onDelete}
-                      onDuplicate={onDuplicate}
                       onContextMenu={onContextMenu}
                     />
                   ))}
@@ -4150,6 +4108,29 @@ export default function UniversalBuilder({ target }: Props) {
     setSelectedId(node.id);
     setActivePanel("settings");
     setInspectorTab(LAYOUT_TYPES.has(node.type) ? "layout" : "content");
+  };
+
+  const addSection = () => {
+    const sectionId = makeId("section");
+    const containerId = makeId("container");
+    const container = createDefaultNode(
+      "container",
+      "Container",
+      containerId,
+      { contentWidth: "100%", htmlTag: "div" },
+      [],
+    );
+    const section = createDefaultNode(
+      "section",
+      "Section",
+      sectionId,
+      { contentWidth: "boxed", containerWidth: "1200px", htmlTag: "section" },
+      [container],
+    );
+    commitRoot([...layout.root, section]);
+    setSelectedId(section.id);
+    setActivePanel("settings");
+    setInspectorTab("layout");
   };
 
   const deleteNode = (id: string) => {
@@ -9280,10 +9261,16 @@ export default function UniversalBuilder({ target }: Props) {
           <section className={styles.canvasArea}>
             <div className={styles.canvasTopbar}>
               <span>{KIND_LABELS[target.kind]} Editor</span>
-
               <span className={styles.canvasHint}>
-                {device.toUpperCase()} · Drag elements to arrange your layout
+                {device.toUpperCase()} · Select any element to edit; drag its box to move; right-click for actions
               </span>
+              <button
+                type="button"
+                onClick={addSection}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 34, padding: "0 12px", border: "1px solid #b9d3f2", borderRadius: 7, background: "#eff6ff", color: "#174f91", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                <Plus size={15} /> Add Section
+              </button>
             </div>
 
             <div className={styles.canvasScroll}>
@@ -9309,15 +9296,20 @@ export default function UniversalBuilder({ target }: Props) {
 
                       <p>Drag a Section, Container or widget here.</p>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActivePanel("widgets");
-                          setElementTab("widgets");
-                        }}
-                      >
-                        Add Your First Element
-                      </button>
+                      <div style={{ display: "flex", justifyContent: "center", gap: 9, flexWrap: "wrap" }}>
+                        <button type="button" onClick={addSection}>
+                          <Plus size={14} /> Add First Section
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePanel("widgets");
+                            setElementTab("widgets");
+                          }}
+                        >
+                          Browse Elements
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <SortableContext
@@ -9341,8 +9333,6 @@ export default function UniversalBuilder({ target }: Props) {
                                 : "content",
                             );
                           }}
-                          onDelete={deleteNode}
-                          onDuplicate={duplicateNode}
                           onContextMenu={openNodeContextMenu}
                         />
                       ))}

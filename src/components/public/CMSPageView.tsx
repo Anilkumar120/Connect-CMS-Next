@@ -1,13 +1,16 @@
-import sanitizeHtml from "sanitize-html";
+﻿import sanitizeHtml from "sanitize-html";
 import type { Page } from "@prisma/client";
 import PublicPageBuilder from "@/components/public/PublicPageBuilder";
 import PublicBuilderDocument from "@/components/public/PublicBuilderDocument";
 import { getBuilderLayout } from "@/lib/page-builder-content";
 import { getPublishedBuilderDocument } from "@/lib/builder/public-layout";
+import { getSeoContentMeta } from "@/lib/seo-manager";
+import { getSiteSettings } from "@/lib/site-settings";
+import SeoJsonLd from "@/components/public/SeoJsonLd";
 
 type PublicPageRecord = Pick<
   Page,
-  "id" | "title" | "slug" | "description" | "seoTitle" | "seoDescription" | "content"
+  "id" | "title" | "slug" | "description" | "seoTitle" | "seoDescription" | "canonicalUrl" | "content"
 >;
 
 function getContentData(content: unknown) {
@@ -82,6 +85,10 @@ export default async function CMSPageView({
 }: {
   page: PublicPageRecord;
 }) {
+  const [seoMeta, siteSettings] = await Promise.all([
+    getSeoContentMeta("page", page.id),
+    getSiteSettings(),
+  ]);
   const contentData = getContentData(page.content);
   const featuredImage =
     typeof contentData.featuredImage === "string" ? contentData.featuredImage : "";
@@ -94,6 +101,14 @@ export default async function CMSPageView({
 
   return (
     <main className="cms-public-page">
+      <SeoJsonLd
+        schemaType={seoMeta.schemaType || "WebPage"}
+        title={page.title}
+        description={seoMeta.ogDescription || page.description || page.seoDescription}
+        url={seoMeta.canonicalUrl || page.canonicalUrl || `${siteSettings.general.siteAddress.replace(/\/$/, "")}/${page.slug}/`}
+        image={seoMeta.ogImage || featuredImage}
+        siteName={siteSettings.general.siteTitle}
+      />
       {!hasBuilderContent && featuredImage && (
         <div className="cms-featured-image">
           <img src={featuredImage} alt={page.title} />

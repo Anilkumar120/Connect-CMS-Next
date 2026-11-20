@@ -10,22 +10,30 @@ export const permalinkStructures = [
   "custom",
 ] as const;
 
+const customPermalinkTokens = [
+  "%year%",
+  "%monthnum%",
+  "%day%",
+  "%hour%",
+  "%minute%",
+  "%second%",
+  "%postname%",
+  "%post_id%",
+  "%category%",
+] as const;
+
 function isValidCustomStructure(value: string) {
   if (!value.startsWith("/") || /[?#]/.test(value)) return false;
   const tokens: string[] = value.match(/%[^%]+%/g) ?? [];
-  const allowed = new Set<string>([
-    "%year%",
-    "%monthnum%",
-    "%day%",
-    "%postname%",
-    "%post_id%",
-    "%category%",
-  ]);
+  const allowed = new Set<string>(customPermalinkTokens);
   return (
+    tokens.length > 0 &&
     tokens.every((token) => allowed.has(token)) &&
     (tokens.includes("%postname%") || tokens.includes("%post_id%"))
   );
 }
+
+const siteModeSchema = z.enum(["auto", "custom"]).default("auto");
 
 export const siteSettingsSchema = z.object({
   general: z.object({
@@ -35,6 +43,8 @@ export const siteSettingsSchema = z.object({
     wordpressAddress: z.string().url().max(500),
     siteAddress: z.string().url().max(500),
     adminEmail: z.string().email().max(254),
+    siteUrlMode: siteModeSchema,
+    adminEmailMode: siteModeSchema,
     membership: z.boolean(),
     newUserRole: z.enum(["ADMIN", "EDITOR", "AUTHOR", "CONTRIBUTOR"]),
     language: z.string().regex(/^[a-z]{2,3}(?:-[A-Z]{2})?$/),
@@ -63,12 +73,17 @@ export const siteSettingsSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["permalinks", "customStructure"],
-      message: "Use a leading slash and a valid %postname% or %post_id% token.",
+      message: "Use a leading slash, supported tags, and include %postname% or %post_id%.",
     });
   }
 });
 
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
+
+export type RuntimeSiteDefaults = {
+  siteOrigin?: string;
+  adminEmail?: string;
+};
 
 export const defaultSiteSettings: SiteSettings = {
   general: {
@@ -78,6 +93,8 @@ export const defaultSiteSettings: SiteSettings = {
     wordpressAddress: "http://localhost:3000",
     siteAddress: "http://localhost:3000",
     adminEmail: "admin@example.com",
+    siteUrlMode: "auto",
+    adminEmailMode: "auto",
     membership: false,
     newUserRole: "CONTRIBUTOR",
     language: "en-US",
@@ -100,7 +117,32 @@ export const defaultSiteSettings: SiteSettings = {
   },
 };
 
-export async function getSiteSettings(): Promise<SiteSettings> {
+function normalizeOrigin(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeEmail(value?: string | null): string | null {
+  const email = value?.trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  return email;
+}
+
+/**
+ * Runtime defaults are deliberately applied only when the corresponding mode
+ * is "auto". A custom URL or administration email remains under the site's control.
+ */
+export async function getSiteSettings(
+  runtime: RuntimeSiteDefaults = {}
+): Promise<SiteSettings> {
+  let settings: SiteSettings;
+
   try {
     const record = await prisma.siteSetting.findUnique({
       where: { key: "site-settings" },
@@ -108,16 +150,45 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     });
 
     const parsed = siteSettingsSchema.safeParse(record?.value);
-
-    return parsed.success ? parsed.data : defaultSiteSettings;
+    settings = parsed.success
+      ? parsed.data
+      : {
+          ...defaultSiteSettings,
+          general: { ...defaultSiteSettings.general },
+          reading: { ...defaultSiteSettings.reading },
+          permalinks: { ...defaultSiteSettings.permalinks },
+        };
   } catch (error) {
-    console.error(
-      "Unable to load site settings. Using defaults:",
-      error
-    );
-
-    return defaultSiteSettings;
+    console.error("Unable to load site settings. Using defaults:", error);
+    settings = {
+      ...defaultSiteSettings,
+      general: { ...defaultSiteSettings.general },
+      reading: { ...defaultSiteSettings.reading },
+      permalinks: { ...defaultSiteSettings.permalinks },
+    };
   }
+
+  const configuredOrigin = normalizeOrigin(
+    process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL
+  );
+  const runtimeOrigin = normalizeOrigin(runtime.siteOrigin);
+  const automaticOrigin = configuredOrigin || runtimeOrigin;
+
+  if (settings.general.siteUrlMode === "auto" && automaticOrigin) {
+    settings.general.wordpressAddress = automaticOrigin;
+    settings.general.siteAddress = automaticOrigin;
+  }
+
+  if (settings.general.adminEmailMode === "auto") {
+    const automaticEmail =
+      normalizeEmail(runtime.adminEmail) ||
+      normalizeEmail(process.env.ADMIN_EMAIL) ||
+      normalizeEmail(settings.general.adminEmail);
+
+    if (automaticEmail) settings.general.adminEmail = automaticEmail;
+  }
+
+  return settings;
 }
 
 export function getPostPermalink(
@@ -136,14 +207,22 @@ export function getPostPermalink(
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
   }).formatToParts(publishedDate);
   const dateValues = Object.fromEntries(
     dateParts.map((part) => [part.type, part.value])
   );
+
   const tokens: Record<string, string> = {
-    "%year%": dateValues.year,
-    "%monthnum%": dateValues.month,
-    "%day%": dateValues.day,
+    "%year%": dateValues.year || "",
+    "%monthnum%": dateValues.month || "",
+    "%day%": dateValues.day || "",
+    "%hour%": dateValues.hour || "00",
+    "%minute%": dateValues.minute || "00",
+    "%second%": dateValues.second || "00",
     "%postname%": encodeURIComponent(post.slug),
     "%post_id%": encodeURIComponent(post.id),
     "%category%": encodeURIComponent(post.categories?.[0]?.category.slug || "uncategorized"),
@@ -200,7 +279,7 @@ export function matchPostPermalink(
     if (token === "postname" || token === "post_id") {
       captures.push(token === "postname" ? "slug" : "id");
       regex += "([^/]+)";
-    } else if (token === "year" || token === "monthnum" || token === "day") {
+    } else if (["year", "monthnum", "day", "hour", "minute", "second"].includes(token)) {
       regex += "\\d{1,4}";
     } else if (token === "category") {
       regex += "[^/]+";
@@ -214,6 +293,7 @@ export function matchPostPermalink(
   const matcher = new RegExp(`${regex}$`);
   const matched = matcher.exec(pathname) || matcher.exec(`${pathname}/`);
   if (!matched) return null;
+
   let values: [string, string][];
   try {
     values = captures.map((token, index) => [

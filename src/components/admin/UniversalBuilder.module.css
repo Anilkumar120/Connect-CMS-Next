@@ -534,23 +534,22 @@
   display: flex;
 }
 
-.dragHandle,
-.nodeActions button {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #ffffff;
+.canvasNode {
   cursor: grab;
+  touch-action: pan-y;
 }
 
-.nodeActions {
-  display: flex;
-  gap: 2px;
-  margin-left: 5px;
+.canvasNode:active {
+  cursor: grabbing;
+}
+
+.canvasNode[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.nodeToolbar {
+  pointer-events: none;
+  user-select: none;
 }
 
 .contextMenuBackdrop {
@@ -924,4 +923,15 @@
   .builderInsideAdmin {
     height: calc(100vh - 66px);
   }
+}
+
+/* Canvas element cards are draggable from their full surface; right-click opens actions. */
+.canvasNode { cursor: grab; touch-action: pan-y; }
+.canvasNode:active { cursor: grabbing; }
+.nodeToolbar { pointer-events: none; user-select: none; }
+.canvasTopbar { flex-wrap: wrap; gap: 8px 14px; }
+.canvasTopbar > button { flex: 0 0 auto; }
+@media (max-width: 720px) {
+  .canvasTopbar { min-height: auto; justify-content: flex-start; padding: 9px 12px; }
+  .canvasHint { flex: 1 1 100%; order: 3; }
 }

@@ -1,17 +1,10 @@
-﻿import UniversalBuilder from "@/components/admin/UniversalBuilder";
-import HeaderFooterManager from "@/components/admin/HeaderFooterManager";
+﻿import { Suspense } from "react";
+import HeaderFooterBuilderRoute from "@/components/admin/HeaderFooterBuilderRoute";
 
-type Props = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default async function HeaderBuilderPage({ searchParams }: Props) {
-  const query = await searchParams;
-  const id = typeof query.id === "string" ? query.id : undefined;
-
-  if (id) {
-    return <UniversalBuilder target={{ kind: "header", id, title: "Header Builder" }} />;
-  }
-
-  return <HeaderFooterManager kind="header" />;
+export default function HeaderBuilderPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: 280, padding: 28 }}>Loading Header Builder…</div>}>
+      <HeaderFooterBuilderRoute kind="header" />
+    </Suspense>
+  );
 }

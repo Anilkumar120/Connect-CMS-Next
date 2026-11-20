@@ -192,16 +192,82 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizePageRules(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length > 100) return null;
+  if (!Array.isArray(value) || value.length > 5000) return null;
   const result: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string") return null;
     const rule = entry.trim();
-    if (!rule || rule.length > 300) return null;
+    if (!rule || rule.length > 500) return null;
     if (rule !== "*" && (!rule.startsWith("/") || rule.startsWith("//") || rule.includes("\\"))) return null;
     result.push(rule);
   }
   return [...new Set(result)];
+}
+
+type HeaderFooterConditionRule = {
+  action: "include" | "exclude";
+  type: string;
+  id?: string;
+  slug?: string;
+  path?: string;
+};
+
+const HEADER_FOOTER_RULE_TYPES = new Set([
+  "entire-site",
+  "all-pages",
+  "selected-page",
+  "all-posts",
+  "selected-post",
+  "all-singular",
+  "blog-archive",
+  "category-archives",
+  "tag-archives",
+  "all-archives",
+  "custom-archives",
+  "custom-type-archive",
+  "all-custom-singular",
+  "custom-type-singular",
+  "selected-custom-post",
+  "selected-category",
+  "selected-tag",
+  "custom-path",
+]);
+
+function normalizeConditionRules(value: unknown): HeaderFooterConditionRule[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 200) return null;
+
+  const result: HeaderFooterConditionRule[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) return null;
+    if ((entry.action !== "include" && entry.action !== "exclude") || typeof entry.type !== "string" || !HEADER_FOOTER_RULE_TYPES.has(entry.type)) return null;
+
+    const rule: HeaderFooterConditionRule = {
+      action: entry.action,
+      type: entry.type,
+    };
+
+    if (entry.id !== undefined) {
+      if (typeof entry.id !== "string" || !entry.id.trim() || entry.id.length > 191) return null;
+      rule.id = entry.id.trim();
+    }
+    if (entry.slug !== undefined) {
+      if (typeof entry.slug !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(entry.slug)) return null;
+      rule.slug = entry.slug;
+    }
+    if (entry.path !== undefined) {
+      if (typeof entry.path !== "string" || !entry.path.trim() || entry.path.length > 500) return null;
+      const path = entry.path.trim();
+      if (path !== "*" && (!path.startsWith("/") || path.startsWith("//") || path.includes("\\"))) return null;
+      rule.path = path;
+    }
+
+    if (["selected-page", "selected-post", "selected-custom-post", "selected-category", "selected-tag"].includes(rule.type) && !rule.id) return null;
+    if (["custom-type-archive", "custom-type-singular"].includes(rule.type) && !rule.slug) return null;
+    if (rule.type === "custom-path" && !rule.path) return null;
+    result.push(rule);
+  }
+  return result;
 }
 
 function isAdministrator(role: string | undefined): boolean {
@@ -388,10 +454,11 @@ export async function POST(request: NextRequest) {
         if (!isRecord(body.conditions)) return jsonError("Display conditions are invalid.");
         const include = normalizePageRules(body.conditions.include);
         const exclude = normalizePageRules(body.conditions.exclude);
-        if (!include || !exclude) return jsonError("Use page paths starting with /, or * for all pages. Maximum 100 rules per list.");
+        const rules = normalizeConditionRules(body.conditions.rules);
+        if (!include || !exclude || !rules) return jsonError("Display conditions are invalid. Use valid condition types and select the required page, post or archive.");
         const updated = await prisma.builderDocument.update({
           where: { id: existing.id },
-          data: { conditions: { include, exclude } as Prisma.InputJsonValue },
+          data: { conditions: { include, exclude, rules } as Prisma.InputJsonValue },
         });
         return NextResponse.json({ success: true, message: "Display conditions saved.", document: updated });
       }

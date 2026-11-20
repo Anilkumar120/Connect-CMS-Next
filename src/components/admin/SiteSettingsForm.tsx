@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import MediaPickerModal, {
   type MediaPickerItem,
@@ -37,6 +37,8 @@ const initialSettings: SettingsFormState = {
     wordpressAddress: "http://localhost:3000",
     siteAddress: "http://localhost:3000",
     adminEmail: "admin@example.com",
+    siteUrlMode: "auto",
+    adminEmailMode: "auto",
     membership: false,
     newUserRole: "CONTRIBUTOR",
     language: "en-US",
@@ -61,12 +63,26 @@ const initialSettings: SettingsFormState = {
 
 const permalinkExamples: Record<string, string> = {
   plain: "/?p=123",
-  "day-and-name": "/2026/11/13/sample-post/",
+  "day-and-name": "/2026/11/20/sample-post/",
   "month-and-name": "/2026/11/sample-post/",
   numeric: "/archives/123/",
   "post-name": "/sample-post/",
-  custom: "/%postname%/",
+  custom: "/%category%/%postname%/",
 };
+
+const permalinkTags = [
+  ["%year%", "Year"],
+  ["%monthnum%", "Month"],
+  ["%day%", "Day"],
+  ["%hour%", "Hour"],
+  ["%minute%", "Minute"],
+  ["%second%", "Second"],
+  ["%post_id%", "Post ID"],
+  ["%postname%", "Post Name"],
+  ["%category%", "Category"],
+] as const;
+
+type RuntimeDefaults = { siteOrigin: string; adminEmail: string };
 
 export default function SiteSettingsForm() {
   const [settings, setSettings] = useState(initialSettings);
@@ -77,6 +93,8 @@ export default function SiteSettingsForm() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [runtimeDefaults, setRuntimeDefaults] = useState<RuntimeDefaults>({ siteOrigin: "", adminEmail: "" });
+  const permalinkInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -89,6 +107,10 @@ export default function SiteSettingsForm() {
         if (active) {
           setSettings(result.settings);
           setPages(result.pages);
+          setRuntimeDefaults({
+            siteOrigin: typeof result.runtime?.siteOrigin === "string" ? result.runtime.siteOrigin : "",
+            adminEmail: typeof result.runtime?.adminEmail === "string" ? result.runtime.adminEmail : "",
+          });
         }
       })
       .catch((reason: unknown) => {
@@ -133,6 +155,47 @@ export default function SiteSettingsForm() {
       permalinks: { ...current.permalinks, [key]: value },
     }));
   }
+
+  function insertPermalinkTag(token: string) {
+    const input = permalinkInputRef.current;
+    const current = settings.permalinks.customStructure;
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? current.length;
+    const next = `${current.slice(0, start)}${token}${current.slice(end)}`;
+    updatePermalinks("customStructure", next);
+    requestAnimationFrame(() => {
+      input?.focus();
+      const cursor = start + token.length;
+      input?.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function setSiteUrlMode(mode: "auto" | "custom") {
+    updateGeneral("siteUrlMode", mode);
+    if (mode === "auto") {
+      const origin = runtimeDefaults.siteOrigin || window.location.origin;
+      updateGeneral("wordpressAddress", origin);
+      updateGeneral("siteAddress", origin);
+    }
+  }
+
+  function setAdminEmailMode(mode: "auto" | "custom") {
+    updateGeneral("adminEmailMode", mode);
+    if (mode === "auto" && runtimeDefaults.adminEmail) {
+      updateGeneral("adminEmail", runtimeDefaults.adminEmail);
+    }
+  }
+
+  const customPreviewPath = settings.permalinks.customStructure
+    .replace(/%year%/g, "2026")
+    .replace(/%monthnum%/g, "11")
+    .replace(/%day%/g, "20")
+    .replace(/%hour%/g, "10")
+    .replace(/%minute%/g, "30")
+    .replace(/%second%/g, "00")
+    .replace(/%post_id%/g, "123")
+    .replace(/%postname%/g, "sample-post")
+    .replace(/%category%/g, "broadband");
 
   async function saveSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -258,16 +321,32 @@ export default function SiteSettingsForm() {
                 <small>Clearing removes the site’s reference only. The media file stays in the library.</small>
               </div>
               <label className={styles.field}>
+                <span>Site URL Detection</span>
+                <select value={settings.general.siteUrlMode} onChange={(e) => setSiteUrlMode(e.target.value as "auto" | "custom")}>
+                  <option value="auto">Automatically detect current live domain</option>
+                  <option value="custom">Use custom address</option>
+                </select>
+                <small>Auto mode uses the deployment's configured site URL or the domain currently serving this admin panel.</small>
+              </label>
+              <label className={styles.field}>
                 <span>WordPress Address (URL)</span>
-                <input type="url" value={settings.general.wordpressAddress} onChange={(e) => updateGeneral("wordpressAddress", e.target.value)} required />
+                <input type="url" value={settings.general.wordpressAddress} disabled={settings.general.siteUrlMode === "auto"} onChange={(e) => { updateGeneral("siteUrlMode", "custom"); updateGeneral("wordpressAddress", e.target.value); }} required />
               </label>
               <label className={styles.field}>
                 <span>Site Address (URL)</span>
-                <input type="url" value={settings.general.siteAddress} onChange={(e) => updateGeneral("siteAddress", e.target.value)} required />
+                <input type="url" value={settings.general.siteAddress} disabled={settings.general.siteUrlMode === "auto"} onChange={(e) => { updateGeneral("siteUrlMode", "custom"); updateGeneral("siteAddress", e.target.value); }} required />
+              </label>
+              <label className={styles.field}>
+                <span>Administration Email Detection</span>
+                <select value={settings.general.adminEmailMode} onChange={(e) => setAdminEmailMode(e.target.value as "auto" | "custom")}>
+                  <option value="auto">Use currently logged-in admin email</option>
+                  <option value="custom">Use custom administration email</option>
+                </select>
+                <small>Auto mode is populated from the active account. Switch to Custom to keep a separate site contact address.</small>
               </label>
               <label className={styles.field}>
                 <span>Administration Email Address</span>
-                <input type="email" value={settings.general.adminEmail} onChange={(e) => updateGeneral("adminEmail", e.target.value)} required />
+                <input type="email" value={settings.general.adminEmail} disabled={settings.general.adminEmailMode === "auto"} onChange={(e) => { updateGeneral("adminEmailMode", "custom"); updateGeneral("adminEmail", e.target.value); }} required />
               </label>
               <label className={styles.checkbox}>
                 <input type="checkbox" checked={settings.general.membership} onChange={(e) => updateGeneral("membership", e.target.checked)} />
@@ -391,11 +470,37 @@ export default function SiteSettingsForm() {
                 ))}
               </fieldset>
               {settings.permalinks.structure === "custom" && (
-                <label className={styles.field}>
-                  <span>Custom Structure</span>
-                  <input value={settings.permalinks.customStructure} onChange={(e) => updatePermalinks("customStructure", e.target.value)} placeholder="/%year%/%postname%/" />
-                  <small>Tokens: %year%, %monthnum%, %day%, %postname%, %post_id%, %category%. Include %postname% or %post_id%.</small>
-                </label>
+                <div className={styles.customPermalinkEditor}>
+                  <label className={styles.field}>
+                    <span>Custom Structure</span>
+                    <div className={styles.customStructureInput}>
+                      <span>{settings.general.siteAddress.replace(/\/$/, "")}</span>
+                      <input
+                        ref={permalinkInputRef}
+                        value={settings.permalinks.customStructure}
+                        onChange={(e) => updatePermalinks("customStructure", e.target.value)}
+                        placeholder="/%category%/%postname%/"
+                        aria-label="Custom permalink structure"
+                      />
+                    </div>
+                  </label>
+                  <div className={styles.permalinkTags}>
+                    <strong>Available tags:</strong>
+                    <div className={styles.permalinkTagButtons}>
+                      {permalinkTags.map(([token, label]) => (
+                        <button key={token} type="button" onClick={() => insertPermalinkTag(token)} title={`Insert ${token}`}>
+                          {token}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className={styles.permalinkPreview}>
+                    <strong>Example:</strong>
+                    <code>{settings.general.siteAddress.replace(/\/$/, "")}{customPreviewPath}</code>
+                    <small>For example, /%category%/%postname%/ creates /broadband/sample-post/.</small>
+                    <small>%author% is not available yet because the current Post database model does not store an author relation.</small>
+                  </div>
+                </div>
               )}
             </section>
           )}

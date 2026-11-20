@@ -12,16 +12,49 @@ async function authorize() {
   return user?.isActive ? user : null;
 }
 
-export async function GET() {
+function getRequestSiteOrigin(request: NextRequest): string {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
+    } catch {
+      // Fall through to the incoming deployment host.
+    }
+  }
+
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto === "http" || forwardedProto === "https"
+    ? forwardedProto
+    : request.nextUrl.protocol.replace(":", "");
+
   try {
-    if (!(await authorize())) {
+    const url = new URL(`${protocol}://${host}`);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
+  } catch {
+    // Fall through to Next.js' request URL.
+  }
+
+  return request.nextUrl.origin;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const user = await authorize();
+    if (!user) {
       return NextResponse.json(
         { success: false, message: "Unauthorized." },
         { status: 401 }
       );
     }
 
-    const settings = await getSiteSettings();
+    const siteOrigin = getRequestSiteOrigin(request);
+    const settings = await getSiteSettings({
+      siteOrigin,
+      adminEmail: user.email,
+    });
     const [pages, icon] = await Promise.all([
       prisma.page.findMany({
         where: { status: "PUBLISHED", deletedAt: null },
@@ -47,6 +80,10 @@ export async function GET() {
         general: { ...settings.general, siteIcon: icon },
       },
       pages,
+      runtime: {
+        siteOrigin,
+        adminEmail: user.email,
+      },
     });
   } catch (error) {
     console.error("GET site settings error:", error);
