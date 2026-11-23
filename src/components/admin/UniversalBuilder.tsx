@@ -17,7 +17,7 @@ import {
   useSensor,
   useSensors,
   pointerWithin,
-  closestCenter,
+  rectIntersection,
   useDraggable,
   useDroppable,
   type DragEndEvent,
@@ -1145,28 +1145,54 @@ function getCanvasWidthIndicator(
 
   if (display === "grid") {
     const columns = String(parentStyle.gridTemplateColumns || "").trim();
+    const repeatMatch = columns.match(/^repeat\(\s*(\d+)\s*,\s*(.+)\)$/i);
+    let tracks: string[] = [];
+    if (repeatMatch) {
+      const repeatedTrack = repeatMatch[2].trim();
+      tracks = Array.from({ length: Math.max(1, Number(repeatMatch[1])) }, () => repeatedTrack);
+    } else {
+      tracks = columns.match(/minmax\(\s*0\s*,\s*[^)]+\)|[^\s]+/gi) || [];
+    }
+
+    const childIndex = siblings.findIndex((sibling) => sibling.id === node.id);
+    if (tracks.length > 0 && childIndex >= 0) {
+      const selectedTrack = tracks[childIndex % tracks.length];
+      const trackMatch = selectedTrack.match(/minmax\(\s*0\s*,\s*([^)]+)\s*\)/i);
+      const trackValue = String(trackMatch?.[1] || selectedTrack).trim();
+      const fixedPercentageTotal = tracks.reduce((total, track) => {
+        const match = track.match(/minmax\(\s*0\s*,\s*(\d+(?:\.\d+)?)%\s*\)/i);
+        return total + (match ? Number(match[1]) : 0);
+      }, 0);
+      const frWeights = tracks.map((track) => {
+        const match = track.match(/minmax\(\s*0\s*,\s*([\d.]+)fr\s*\)/i);
+        return Number(match?.[1] || 0);
+      });
+      const totalFr = frWeights.reduce((total, weight) => total + weight, 0);
+      const percentageMatch = trackValue.match(/^(\d+(?:\.\d+)?)%$/);
+      if (percentageMatch) {
+        const percentage = Number(percentageMatch[1]);
+        return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+      }
+      const frMatch = trackValue.match(/^([\d.]+)fr$/i);
+      if (frMatch && totalFr > 0) {
+        const hasFixedNonPercent = tracks.some((track) =>
+          /minmax\(\s*0\s*,\s*[^)]+\)/i.test(track) &&
+          !/minmax\(\s*0\s*,\s*(?:[\d.]+%|[\d.]+fr)\s*\)/i.test(track),
+        );
+        if (!hasFixedNonPercent) {
+          const percentage = Math.max(0, 100 - fixedPercentageTotal) * Number(frMatch[1]) / totalFr;
+          return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+        }
+      }
+      return { label: trackValue, percentage: null };
+    }
+
     const explicitPercentage = explicitWidth.match(/^(\d+(?:\.\d+)?)%$/);
     if (explicitPercentage) {
       const percentage = Number(explicitPercentage[1]);
-      return { label: `${percentage}%`, percentage };
+      return { label: `${Number(percentage.toFixed(2))}%`, percentage };
     }
-
-    const repeatMatch = columns.match(/^repeat\(\s*(\d+)/i);
-    const gridColumnCount = Math.max(
-      1,
-      Math.min(
-        12,
-        repeatMatch
-          ? Number(repeatMatch[1])
-          : columns
-            ? columns.split(/\s+(?![^()]*\))/).filter(Boolean).length
-            : count,
-      ),
-    );
-    const percentage = 100 / gridColumnCount;
-    return { label: `${Number(percentage.toFixed(2))}%`, percentage };
   }
-
   if (display === 'flex' && direction.startsWith('column')) {
     const width = explicitWidth || '100%';
     const match = width.match(/^(\d+(?:\.\d+)?)%$/);
@@ -1178,6 +1204,30 @@ function getCanvasWidthIndicator(
   return { label: width, percentage: match ? Number(match[1]) : null };
 }
 
+function getCanvasHeightIndicator(
+  node: BuilderNode,
+  device: BuilderDevice,
+): { label: string; percentage: number | null } | null {
+  if (!LAYOUT_TYPES.has(node.type)) return null;
+
+  const style = getNodeInlineStyle(node, device);
+  const rawHeight = String(style.height ?? "").trim();
+  const rawMinHeight = String(style.minHeight ?? "").trim();
+  const isAuto = !rawHeight || rawHeight.toLowerCase() === "auto";
+  const label = isAuto
+    ? rawMinHeight
+      ? `Auto Â· min ${rawMinHeight}`
+      : "Auto"
+    : rawHeight;
+  const percentageMatch = rawHeight.match(/^(\d+(?:\.\d+)?)%$/);
+
+  return {
+    label,
+    percentage: percentageMatch
+      ? Math.max(0, Math.min(100, Number(percentageMatch[1])))
+      : null,
+  };
+}
 function getCanvasFlexItemStyle(
   node: BuilderNode,
   device: BuilderDevice,
@@ -1594,12 +1644,13 @@ function UnitControl({
 }) {
   const parsed = readCssMeasure(value, allowUnitless);
   const [emptyUnit, setEmptyUnit] = useState<CssMeasureUnit>("px");
+  const [manualUnit, setManualUnit] = useState<CssMeasureUnit | null>(null);
 
   useEffect(() => {
     if (value.trim()) setEmptyUnit(parsed.unit);
   }, [value, parsed.unit]);
 
-  const selectedUnit = value.trim() ? parsed.unit : emptyUnit;
+  const selectedUnit = manualUnit || (value.trim() ? parsed.unit : emptyUnit);
   const units: CssMeasureUnit[] = [
     "px",
     "%",
@@ -1614,14 +1665,25 @@ function UnitControl({
 
   const changeUnit = (nextUnit: CssMeasureUnit) => {
     setEmptyUnit(nextUnit);
+    setManualUnit(nextUnit);
     if (nextUnit === "auto") {
       onChange("auto");
       return;
     }
     if (nextUnit === "custom") {
-      // Keep the current valid length as a CSS expression, or seed a useful
-      // starter expression when the control is blank.
-      onChange(value ? (selectedUnit === "custom" ? value : `calc(${value})`) : "");
+      // Auto is a sizing mode, not a numeric CSS expression. Clear it so the
+      // Custom text field becomes editable immediately instead of calc(auto).
+      // Existing numeric units are wrapped so the input stays in Custom mode.
+      const currentValue = value.trim();
+      const nextValue =
+        selectedUnit === "auto" || currentValue.toLowerCase() === "auto"
+          ? ""
+          : selectedUnit === "custom"
+            ? currentValue
+            : currentValue
+              ? `calc(${currentValue})`
+              : "";
+      onChange(nextValue);
       return;
     }
     if (nextUnit === "unitless") {
@@ -1638,7 +1700,7 @@ function UnitControl({
   const isCustom = selectedUnit === "custom";
   const isAuto = selectedUnit === "auto";
   const displayValue = isCustom
-    ? value
+    ? (value.trim().toLowerCase() === "auto" ? "" : value)
     : isAuto
       ? "auto"
       : parsed.number;
@@ -3461,6 +3523,7 @@ function DropArea({
   );
 }
 
+// LEGACY_WIDGET_DRAG_DROP_V3
 function SortableCanvasNode({
   node,
   selectedId,
@@ -3484,7 +3547,7 @@ function SortableCanvasNode({
   const sortable = useSortable({
     id: node.id,
     disabled: locked,
-    data: { kind: "node", nodeId: node.id },
+    data: { kind: "node", nodeId: node.id, nodeType: node.type },
   });
   const selected = selectedId === node.id;
   const children = node.children || [];
@@ -3510,8 +3573,9 @@ function SortableCanvasNode({
   return (
     <div
       ref={sortable.setNodeRef}
-      {...sortable.attributes}
-      {...sortable.listeners}
+      {...(!isLayout ? sortable.attributes : {})}
+      {...(!isLayout ? sortable.listeners : {})}
+
       data-builder-node-type={node.type}
       className={`${styles.canvasNode} ${
         selected ? styles.canvasNodeSelected : ""
@@ -3537,68 +3601,109 @@ function SortableCanvasNode({
         onContextMenu(node.id, event.clientX, event.clientY);
       }}
     >
-      <div className={styles.nodeToolbar} aria-label={`${node.label} element toolbar`}>
-        <NodeIcon size={13} aria-hidden="true" />
-        <span style={{ minWidth: 0, display: "inline-flex", alignItems: "center", gap: 7 }}>
-          <span>
-            {node.label}
-            {locked ? " ðŸ”’" : ""}
-            {!node.enabled ? " (Hidden)" : ""}
-          </span>
-          {(() => {
-            const widthInfo = getCanvasWidthIndicator(node, device, parentNode);
-            if (!widthInfo) return null;
-            return (
-              <span
-                title={`Container width: ${widthInfo.label}`}
-                aria-label={`Container width ${widthInfo.label}`}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}
-              >
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", whiteSpace: "nowrap" }}>
-                  {widthInfo.label}
-                </span>
-                {widthInfo.percentage !== null ? (
-                  <span style={{ display: "inline-block", width: 42, height: 4, borderRadius: 4, overflow: "hidden", background: "#dbeafe" }}>
-                    <span style={{ display: "block", height: "100%", width: `${Math.max(0, Math.min(100, widthInfo.percentage))}%`, borderRadius: 4, background: "#3984e8" }} />
-                  </span>
-                ) : null}
-              </span>
-            );
-          })()}
-        </span>
-        <span title="Drag to move"><Move size={11} aria-hidden="true" /></span>
-        {isLayout ? (
-          <span className={styles.nodeToolbarActions} onPointerDown={(event) => event.stopPropagation()}>
+      {isLayout ? (
+        <div
+          className={styles.nodeToolbar}
+          role="toolbar"
+          aria-label={`${node.label} layout actions`}
+        >
+          <span className={styles.nodeToolbarActions}>
             <button
               type="button"
-              title="Add a nested container / structure"
+              title={`Add a container inside ${node.label}`}
               aria-label={`Add a container inside ${node.label}`}
               disabled={locked}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onAddLayout(node.id);
               }}
             >
-              <Plus size={12} />
+              <Plus size={13} />
             </button>
+          </span>
+
+          <button
+            type="button"
+            className={styles.layoutToolbarDrag}
+            title={locked ? "Element locked" : "Drag to move"}
+            aria-label={locked ? "Element locked" : `Move ${node.label}`}
+            disabled={locked}
+            {...sortable.attributes}
+            {...sortable.listeners}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Move size={13} aria-hidden="true" />
+          </button>
+          <span className={styles.canvasDimensionIndicators}>
+            {(() => {
+              const info = getCanvasWidthIndicator(node, device, parentNode);
+              if (!info) return null;
+              const fill = info.percentage !== null
+                ? Math.max(0, Math.min(100, info.percentage))
+                : /^auto\b/i.test(info.label) ? 0 : 100;
+              return (
+                <span className={styles.canvasDimensionBadge} title={`Width: ${info.label}`}>
+                  <strong>W</strong>
+                  <span className={styles.canvasDimensionValue}>{info.label}</span>
+                  <span className={styles.canvasDimensionTrack} aria-hidden="true">
+                    <span style={{ width: `${fill}%` }} />
+                  </span>
+                </span>
+              );
+            })()}
+            {(() => {
+              const info = getCanvasHeightIndicator(node, device);
+              if (!info) return null;
+              const fill = info.percentage !== null
+                ? Math.max(0, Math.min(100, info.percentage))
+                : /^auto\b/i.test(info.label) ? 0 : 100;
+              return (
+                <span className={styles.canvasDimensionBadge} title={`Height: ${info.label}`}>
+                  <strong>H</strong>
+                  <span className={styles.canvasDimensionValue}>{info.label}</span>
+                  <span className={styles.canvasDimensionTrack} aria-hidden="true">
+                    <span style={{ width: `${fill}%` }} />
+                  </span>
+                </span>
+              );
+            })()}
+          </span>
+
+          <span className={styles.nodeToolbarActions}>
             <button
               type="button"
               title={`Delete ${node.label}`}
               aria-label={`Delete ${node.label}`}
               disabled={locked}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onDelete(node.id);
               }}
             >
-              <Trash2 size={12} />
+              <Trash2 size={13} />
             </button>
           </span>
-        ) : null}
-      </div>
-
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={styles.widgetEditButton}
+          title={`Edit ${node.label}`}
+          aria-label={`Edit ${node.label}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onSelect(node.id);
+          }}
+        >
+          <LucideIcons.Pencil size={14} aria-hidden="true" />
+        </button>
+      )}
       {isLayout ? (
         <div
           className={node.type === "section" ? styles.previewSection : styles.nodePreview}
@@ -4258,10 +4363,12 @@ export default function UniversalBuilder({ target }: Props) {
   };
 
   const addSection = () => {
+    setContextMenu(null);
     setLayoutPickerContext({ parentId: null, rootSection: true });
   };
 
   const openNestedLayoutPicker = (parentId: string) => {
+    setContextMenu(null);
     setLayoutPickerContext({ parentId, rootSection: false });
   };
 
@@ -4751,31 +4858,265 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  // ELEMENTOR SIBLING WIDTH DISTRIBUTION V3 START
   const updateResponsiveStyle = (key: keyof BuilderStyle, value: unknown) => {
-    if (key === "width" && selectedId) {
-      const parentId = findParent(layout.root, selectedId);
-      const parent = parentId ? findNode(layout.root, parentId) : null;
-      if (parent && LAYOUT_TYPES.has(parent.type)) {
-        const parentStyles = resolveBuilderStyles(parent.styles, device);
-        const parentDisplay = String(getResponsiveValue(parentStyles.display, device) || "flex");
-        const parentDirection = String(
-          getResponsiveValue(parentStyles.direction, device) ||
-            (parent.type === "row" ? "row" : "column"),
-        );
-        if (parentDisplay === "flex" && parentDirection.startsWith("row")) {
-          const columnWidth = String(value ?? "").trim() || "auto";
-          updateResponsiveStyles([
-            ["width", columnWidth],
-            ["flexBasis", columnWidth],
-            ["flexGrow", "0"],
-            ["flexShrink", "1"],
-          ]);
-          return;
-        }
-      }
+    if (key !== "width" || !selectedId) {
+      updateResponsiveStyles([[key, value]]);
+      return;
     }
 
-    updateResponsiveStyles([[key, value]]);
+    const selectedLayoutNode = findNode(layout.root, selectedId);
+    if (!selectedLayoutNode || !LAYOUT_TYPES.has(selectedLayoutNode.type)) {
+      updateResponsiveStyles([[key, value]]);
+      return;
+    }
+
+    const widthText = String(value ?? "").trim();
+    const isAutoWidth = !widthText || widthText.toLowerCase() === "auto";
+    const parentId = findParent(layout.root, selectedId);
+    const parent = parentId ? findNode(layout.root, parentId) : null;
+    const parentStyles = parent ? resolveBuilderStyles(parent.styles, device) : null;
+    const parentDisplay = parentStyles
+      ? String(getResponsiveValue(parentStyles.display, device) || (parent?.type === "grid" ? "grid" : "flex"))
+      : "";
+    const parentDirection = parentStyles
+      ? String(
+          getResponsiveValue(parentStyles.direction, device) ||
+            (parent?.type === "row" ? "row" : "column"),
+        )
+      : "";
+
+    const setStyleForDevice = (
+      styles: BuilderStyle,
+      styleKey: keyof BuilderStyle,
+      nextValue: unknown,
+    ): BuilderStyle => {
+      const currentValue = styles[styleKey] as unknown;
+      const isResponsiveObject =
+        Boolean(currentValue) &&
+        typeof currentValue === "object" &&
+        !Array.isArray(currentValue) &&
+        ("desktop" in (currentValue as Record<string, unknown>) ||
+          "tablet" in (currentValue as Record<string, unknown>) ||
+          "mobile" in (currentValue as Record<string, unknown>));
+      const current = isResponsiveObject
+        ? (currentValue as Record<string, unknown>)
+        : currentValue !== undefined && currentValue !== null
+          ? { desktop: currentValue }
+          : {};
+
+      return {
+        ...styles,
+        [styleKey]: { ...current, [device]: nextValue },
+      } as BuilderStyle;
+    };
+
+    const setNodeWidthMode = (
+      node: BuilderNode,
+      mode: "custom" | "default",
+    ): BuilderNode => {
+      const currentMode = node.advanced?.widthMode;
+      const responsiveMode =
+        typeof currentMode === "string"
+          ? { desktop: currentMode }
+          : currentMode && typeof currentMode === "object"
+            ? (currentMode as Record<string, unknown>)
+            : {};
+      return {
+        ...node,
+        advanced: {
+          ...(node.advanced || {}),
+          widthMode: {
+            ...responsiveMode,
+            [device]: mode,
+          } as NonNullable<BuilderNode["advanced"]>["widthMode"],
+        },
+      };
+    };
+
+    // FLEX ROW: preserve every previously entered custom sibling width.
+    // Only auto/default siblings receive flex-grow, so the remaining space is
+    // shared equally. Example: 10% + four auto siblings = 10% + 22.5% each.
+    if (
+      parent &&
+      parentDisplay === "flex" &&
+      parentDirection.startsWith("row")
+    ) {
+      commitRoot(
+        updateTree(layout.root, parent.id, (parentNode) => ({
+          ...parentNode,
+          children: (parentNode.children || []).map((child) => {
+            if (!LAYOUT_TYPES.has(child.type)) return child;
+
+            const isSelected = child.id === selectedId;
+            const storedWidth = String(
+              getResponsiveValue(child.styles.width, device) || "",
+            ).trim();
+            const storedBasis = String(
+              getResponsiveValue(child.styles.flexBasis, device) || "",
+            ).trim();
+            const storedMode = getWidthMode(child.advanced?.widthMode, device);
+            const isDefaultFullWidth = storedWidth === "100%" && storedMode === "default";
+            const isStoredAuto = !storedWidth || storedWidth.toLowerCase() === "auto";
+            const hasSavedCustomWidth = Boolean(
+              !isStoredAuto && !isDefaultFullWidth ||
+              storedMode === "custom" ||
+              storedMode === "full" ||
+              storedMode === "inline" ||
+              (storedBasis && storedBasis !== "0%" && storedBasis !== "auto"),
+            );
+
+            const nextWidth = isSelected
+              ? (isAutoWidth ? "auto" : widthText)
+              : hasSavedCustomWidth
+                ? (storedWidth || (storedMode === "full" ? "100%" : "fit-content"))
+                : "auto";
+            const nextBasis = isSelected
+              ? (isAutoWidth ? "0%" : widthText)
+              : hasSavedCustomWidth
+                ? (storedBasis && storedBasis !== "0%" ? storedBasis : nextWidth)
+                : "0%";
+            const storedGrow = Number(
+              getResponsiveValue(child.styles.flexGrow, device) || 0,
+            );
+            const nextGrow = isSelected
+              ? (isAutoWidth ? "1" : "0")
+              : hasSavedCustomWidth
+                ? "0"
+                : (storedGrow > 0 ? String(storedGrow) : "1");
+            const nextMode = isSelected
+              ? (isAutoWidth ? "default" : "custom")
+              : hasSavedCustomWidth
+                ? "custom"
+                : "default";
+
+            let nextStyles = child.styles;
+            nextStyles = setStyleForDevice(nextStyles, "width", nextWidth);
+            nextStyles = setStyleForDevice(nextStyles, "flexBasis", nextBasis);
+            nextStyles = setStyleForDevice(nextStyles, "flexGrow", nextGrow);
+            nextStyles = setStyleForDevice(nextStyles, "flexShrink", "1");
+
+            return setNodeWidthMode(
+              { ...child, styles: nextStyles },
+              nextMode,
+            );
+          }),
+        })),
+      );
+      return;
+    }
+    // CSS GRID: persist a separate width for each column. Custom columns keep
+    // their widths; untouched 1fr columns automatically divide the remainder.
+    if (parent && parentDisplay === "grid") {
+      const directLayoutChildren = (parent.children || []).filter((child) =>
+        LAYOUT_TYPES.has(child.type),
+      );
+      const selectedIndex = directLayoutChildren.findIndex((child) => child.id === selectedId);
+      if (selectedIndex >= 0 && directLayoutChildren.length > 0) {
+        const currentTemplate = String(
+          getResponsiveValue(parentStyles?.gridTemplateColumns, device) || "",
+        ).trim();
+        const repeatMatch = currentTemplate.match(/^repeat\(\s*(\d+)/i);
+        const explicitTracks = currentTemplate.match(/minmax\(\s*0\s*,\s*[^)]+\)|[^\s]+/gi) || [];
+        const inferredColumns = repeatMatch
+          ? Number(repeatMatch[1])
+          : explicitTracks.length > 0
+            ? explicitTracks.length
+            : directLayoutChildren.length;
+        const gridColumns = Math.max(
+          1,
+          Math.min(12, inferredColumns || directLayoutChildren.length),
+        );
+        const selectedColumn = selectedIndex % gridColumns;
+        const columnWidths: Array<string | null> = Array.from(
+          { length: gridColumns },
+          () => null,
+        );
+
+        for (let column = 0; column < gridColumns; column += 1) {
+          const columnChild = directLayoutChildren.find(
+            (_child, index) => index % gridColumns === column,
+          );
+          if (!columnChild) continue;
+
+          const savedWidth = String(
+            getResponsiveValue(columnChild.styles.width, device) || "",
+          ).trim();
+          const savedMode = getWidthMode(columnChild.advanced?.widthMode, device);
+          const savedBasis = String(
+            getResponsiveValue(columnChild.styles.flexBasis, device) || "",
+          ).trim();
+          const defaultFullWidth = savedWidth === "100%" && savedMode === "default";
+          const savedAuto = !savedWidth || savedWidth.toLowerCase() === "auto";
+          const isCustom = Boolean(
+            !savedAuto && !defaultFullWidth ||
+            savedMode === "custom" ||
+            savedMode === "full" ||
+            savedMode === "inline" ||
+            (savedBasis && savedBasis !== "0%" && savedBasis !== "auto"),
+          );
+          if (isCustom) {
+            columnWidths[column] = savedWidth || (savedMode === "full" ? "100%" : "fit-content");
+          }
+        }
+
+        columnWidths[selectedColumn] = isAutoWidth ? null : widthText;
+        const nextTemplate = columnWidths
+          .map((columnWidth) =>
+            columnWidth
+              ? `minmax(0, ${columnWidth})`
+              : "minmax(0, 1fr)",
+          )
+          .join(" ");
+
+        commitRoot(
+          updateTree(layout.root, parent.id, (parentNode) => {
+            const nextParentStyles = setStyleForDevice(
+              parentNode.styles,
+              "gridTemplateColumns",
+              nextTemplate,
+            );
+            let layoutIndex = -1;
+            const nextChildren = (parentNode.children || []).map((child) => {
+              if (!LAYOUT_TYPES.has(child.type)) return child;
+              layoutIndex += 1;
+              const column = layoutIndex % gridColumns;
+              const savedColumnWidth = columnWidths[column] || "auto";
+              const nextStyles = setStyleForDevice(
+                child.styles,
+                "width",
+                savedColumnWidth,
+              );
+              return setNodeWidthMode(
+                { ...child, styles: nextStyles },
+                "default",
+              );
+            });
+            return {
+              ...parentNode,
+              styles: nextParentStyles,
+              children: nextChildren,
+            };
+          }),
+        );
+        return;
+      }
+    }
+    // Standalone, Section, vertical Flex and other layout nodes keep their own
+    // explicit width. Only the active device is changed.
+    commitRoot(
+      updateTree(layout.root, selectedId, (currentNode) => {
+        const nextStyles = setStyleForDevice(
+          currentNode.styles,
+          "width",
+          isAutoWidth ? "auto" : widthText,
+        );
+        return setNodeWidthMode(
+          { ...currentNode, styles: nextStyles },
+          isAutoWidth ? "default" : "custom",
+        );
+      }),
+    );
   };
 
   const updateResponsiveStyles = (
@@ -7533,6 +7874,7 @@ export default function UniversalBuilder({ target }: Props) {
       Boolean(selectedParent) &&
       selectedParentDisplay === "flex" &&
       selectedParentDirection.startsWith("row");
+    const isGridChild = Boolean(selectedParent) && selectedParentDisplay === "grid";
 
     return (
       <>
@@ -7678,28 +8020,36 @@ export default function UniversalBuilder({ target }: Props) {
             }}
           >
             <UnitControl
-              label={isFlexRowChild ? "Column Width" : "Width"}
+              key={`${node.id}-width-${device}`}
+              label={isFlexRowChild || isGridChild ? "Column Width" : "Width"}
               value={String(
                 getResponsiveValue(node.styles.width, device) ||
                   (isFlexRowChild && Number(getResponsiveValue(node.styles.flexGrow, device) || 0) > 0 ? "auto" : ""),
               )}
               onChange={(value) => updateResponsiveStyle("width", value)}
-              placeholder={isFlexRowChild ? "60% / 40% / auto" : "100%"}
-            />
-            {isFlexRowChild ? (
+              placeholder={isFlexRowChild || isGridChild ? "10% / 25% / auto" : "100%"}
+
+              allowAuto={true}/>
+            <p className={styles.dimensionControlHint} data-dimension-hint="width">Choose px, %, rem, em, Auto or Custom CSS. A value entered here is saved for this Container and active device.</p>
+            {isFlexRowChild || isGridChild ? (
               <p className={styles.flexColumnWidthHint}>
-                This width is applied to this container only. Set each column separately, or use Equal widths on its parent.
+                {isGridChild
+                  ? "This width controls the Grid column track. Cells in the same Grid column share that track width."
+                  : "This width is saved separately for this Container. Other custom widths stay unchanged and auto Containers share the remaining space."}
               </p>
             ) : null}
 
             <UnitControl
+              key={`${node.id}-height-${device}`}
               label="Height"
               value={String(
                 getResponsiveValue(node.styles.height, device) || "",
               )}
               onChange={(value) => updateResponsiveStyle("height", value)}
               placeholder="auto"
-            />
+
+              allowAuto={true}/>
+            <p className={styles.dimensionControlHint} data-dimension-hint="height">Choose px, %, rem, em, Auto or Custom CSS. Height is saved independently for Desktop, Tablet and Mobile.</p>
 
             <UnitControl
               label="Min Width"
@@ -9338,10 +9688,55 @@ export default function UniversalBuilder({ target }: Props) {
   return (
     <DndContext
       sensors={sensors}
+      // BUILDER_NESTED_COLLISION_V4
       collisionDetection={(args) => {
-        const collisions = pointerWithin(args);
+        const pointerHits = pointerWithin(args);
+        const collisions = pointerHits.length ? pointerHits : rectIntersection(args);
+        if (!collisions.length) return [];
 
-        return collisions.length ? collisions : closestCenter(args);
+        const layoutTypes = new Set(["section", "container", "row", "column", "grid"]);
+        const activeNodeId = String(
+          args.active.data.current?.nodeId ?? args.active.id,
+        ).replace(/^navigator:/, "");
+
+        const targetFor = (collision: (typeof collisions)[number]) =>
+          args.droppableContainers.find((item) => item.id === collision.id);
+        const dataFor = (collision: (typeof collisions)[number]) =>
+          targetFor(collision)?.data.current;
+        const areaFor = (collision: (typeof collisions)[number]) => {
+          const rect = targetFor(collision)?.rect.current;
+          return rect ? rect.width * rect.height : Number.MAX_SAFE_INTEGER;
+        };
+        const smallest = (items: typeof collisions) =>
+          items.slice().sort((a, b) => areaFor(a) - areaFor(b))[0];
+
+        // 1) Over a widget: insert/reorder relative to that exact widget.
+        const widgetHits = collisions.filter((collision) => {
+          const data = dataFor(collision);
+          return data?.kind === "node" &&
+            String(data.nodeId ?? "") !== activeNodeId &&
+            typeof data.nodeType === "string" &&
+            !layoutTypes.has(data.nodeType);
+        });
+        if (widgetHits.length) return [smallest(widgetHits)];
+
+        // 2) In empty layout space: use the smallest (deepest) nested DropArea.
+        const containerHits = collisions.filter(
+          (collision) => dataFor(collision)?.kind === "container",
+        );
+        if (containerHits.length) return [smallest(containerHits)];
+
+        // 3) On a layout outline: allow dropping into that Section/Container/Grid.
+        const layoutHits = collisions.filter((collision) => {
+          const data = dataFor(collision);
+          return data?.kind === "node" &&
+            String(data.nodeId ?? "") !== activeNodeId &&
+            typeof data.nodeType === "string" &&
+            layoutTypes.has(data.nodeType);
+        });
+        if (layoutHits.length) return [smallest(layoutHits)];
+
+        return [];
       }}
       onDragEnd={handleDragEnd}
     >
@@ -10498,3 +10893,5 @@ export default function UniversalBuilder({ target }: Props) {
     </DndContext>
   );
 }
+// ELEMENTOR INDEPENDENT WIDTHS + PUBLIC LAYOUT V4 START
+// ELEMENTOR SIZE CONTROLS + DIMENSION INDICATORS V5 START

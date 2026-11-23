@@ -1197,3 +1197,161 @@
   margin: -5px 0 12px;
 }
 /* ELEMENTOR CONTAINER WIDTH DISTRIBUTION V1 END */
+
+/* ELEMENTOR WIDTH + CANVAS TOOLBAR V2 START */
+.canvasNode {
+  position: relative;
+  overflow: visible;
+}
+
+.canvasNode > .nodeToolbar {
+  top: -31px;
+  left: 50%;
+  z-index: 80;
+  min-width: 0;
+  max-width: min(260px, calc(100vw - 32px));
+  height: 28px;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid #1559a4;
+  border-radius: 5px;
+  background: #1764c0;
+  box-shadow: 0 3px 9px rgb(15 23 42 / 18%);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.canvasNode[data-builder-node-type="section"] > .nodeToolbar,
+.canvasNode[data-builder-node-type="container"] > .nodeToolbar,
+.canvasNode[data-builder-node-type="row"] > .nodeToolbar,
+.canvasNode[data-builder-node-type="column"] > .nodeToolbar,
+.canvasNode[data-builder-node-type="grid"] > .nodeToolbar {
+  top: -31px !important;
+  left: 50% !important;
+  z-index: 80 !important;
+  min-width: 0;
+  transform: translateX(-50%);
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.layoutToolbarDrag {
+  display: grid;
+  width: 24px;
+  height: 22px;
+  flex: 0 0 24px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 3px;
+  background: rgb(255 255 255 / 14%);
+  color: #ffffff;
+  cursor: grab;
+  touch-action: none;
+}
+
+.layoutToolbarDrag:hover:not(:disabled) {
+  background: #ffffff;
+  color: #174f91;
+}
+
+.layoutToolbarDrag:active {
+  cursor: grabbing;
+}
+
+.layoutToolbarDrag:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.nodeToolbarActions button {
+  width: 24px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.widgetEditButton {
+  position: absolute;
+  z-index: 80;
+  top: -14px;
+  left: 50%;
+  display: none;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #1559a4;
+  border-radius: 50%;
+  background: #1764c0;
+  color: #ffffff;
+  box-shadow: 0 3px 9px rgb(15 23 42 / 18%);
+  transform: translateX(-50%);
+  cursor: pointer;
+}
+
+.widgetEditButton:hover {
+  background: #0c2f55;
+}
+
+/* A nested child owns the hover toolbar; its ancestor toolbar stays hidden. */
+.canvasNode:hover:not(:has(.canvasNode:hover)) > .nodeToolbar,
+.canvasNodeSelected > .nodeToolbar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.canvasNode:has(.canvasNode:hover) > .nodeToolbar,
+.canvasNode:has(.canvasNodeSelected) > .nodeToolbar {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+ .canvasNodeSelected .canvasNode > .nodeToolbar,
+.canvasNodeSelected .canvasNode > .widgetEditButton {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.canvasNodeSelected .canvasNode:hover:not(:has(.canvasNode:hover)) > .nodeToolbar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.canvasNodeSelected .canvasNode:hover:not(:has(.canvasNode:hover)) > .widgetEditButton {
+  display: grid !important;
+  pointer-events: auto !important;
+}
+
+.canvasNode:hover:not(:has(.canvasNode:hover)) > .widgetEditButton,
+.canvasNodeSelected > .widgetEditButton {
+  display: grid !important;
+}
+
+.canvasNode:has(.canvasNode:hover) > .widgetEditButton,
+.canvasNode:has(.canvasNodeSelected) > .widgetEditButton {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.canvasNodeSelected {
+  z-index: 45;
+}
+
+.canvasNode[data-builder-node-type="section"].canvasNodeSelected {
+  z-index: 45 !important;
+}
+
+@media (max-width: 700px) {
+  .canvasNode > .nodeToolbar {
+    top: -30px;
+    max-width: calc(100vw - 24px);
+  }
+}
+/* ELEMENTOR WIDTH + CANVAS TOOLBAR V2 END */

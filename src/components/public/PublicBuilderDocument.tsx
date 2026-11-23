@@ -225,7 +225,11 @@ function nodeStyleForDevice(
   const widthMode = responsive(node.advanced?.widthMode, device);
   if (widthMode === "inline") put("width", "fit-content");
   if (widthMode === "full") put("width", "100%");
-  if (widthMode === "default") put("width", undefined);
+  if (widthMode === "default") {
+    // Match the Admin canvas: Default clears any inherited width so inline widgets size to content.
+    delete style.width;
+  }
+  // BUILDER_CONTENT_WIDTH_DEFAULT_V5
 
   if (["section", "container", "row", "column", "grid"].includes(node.type)) {
     style.display = responsive(s.display, device) || (node.type === "grid" ? "grid" : "flex");
@@ -321,9 +325,8 @@ function layoutChildrenStyle(node: BuilderNode): CSSProperties {
     alignItems: "var(--builder-layout-align-items, stretch)",
     alignContent: "var(--builder-layout-align-content, stretch)",
     flexWrap: "var(--builder-layout-flex-wrap, nowrap)" as CSSProperties["flexWrap"],
-    gap: "var(--builder-layout-gap, 0px)",
-    rowGap: "var(--builder-layout-row-gap, 0px)",
-    columnGap: "var(--builder-layout-column-gap, 0px)",
+    rowGap: "var(--builder-layout-row-gap, var(--builder-layout-gap, 0px))",
+    columnGap: "var(--builder-layout-column-gap, var(--builder-layout-gap, 0px))",
     gridTemplateColumns: "var(--builder-layout-grid-template-columns, none)",
     gridTemplateRows: "var(--builder-layout-grid-template-rows, auto)",
     gridAutoColumns: "var(--builder-layout-grid-auto-columns, auto)",
@@ -348,6 +351,9 @@ function nodeStyle(node: BuilderNode): CSSProperties {
 
   const result: Record<string, string | number> = {};
   for (const key of keys) {
+    if (key === "gap" && ["section", "container", "row", "column", "grid"].includes(node.type)) {
+      continue;
+    }
     const desktopValue = (resolved[0] as Record<string, unknown>)[key];
     const defaultDisplay: Record<string, string> = {
       section: "block", container: "block", row: "block", column: "block", grid: "block",
@@ -463,23 +469,38 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
             const childWidth = responsive(childStyle.width, device);
             const childFlexBasis = responsive(childStyle.flexBasis, device);
             const childFlexGrow = responsive(childStyle.flexGrow, device);
+            const childFlexShrink = responsive(childStyle.flexShrink, device);
             const widthText = String(childWidth || "").trim();
+            const isAutoWidth = !widthText || widthText.toLowerCase() === "auto";
             const isDefaultFullWidth = widthText === "100%" && resolvedWidthMode === "default";
-            const hasExplicitSize = Boolean(
-              (childWidth && !isDefaultFullWidth) ||
-              childFlexBasis ||
-              Number(childFlexGrow || 0) > 0 ||
+            const hasCustomWidth = Boolean(
+              !isAutoWidth && !isDefaultFullWidth ||
               resolvedWidthMode === "custom" ||
               resolvedWidthMode === "full" ||
               resolvedWidthMode === "inline",
             );
-            if (!hasExplicitSize) {
-              childRules.push(
-                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{flex:1 1 0%;min-width:0;max-width:100%;box-sizing:border-box}`,
-              );
-            }
-          }
-        } else if (display === "flex" && direction.startsWith("column")) {
+            const configuredGrow = Number(childFlexGrow);
+            const configuredShrink = Number(childFlexShrink);
+            const childMinWidth = cssValue(responsive(childStyle.minWidth, device)) || "0";
+            const childMaxWidth = cssValue(responsive(childStyle.maxWidth, device)) || "100%";
+            const basisText = String(childFlexBasis || "").trim();
+            const basisCandidate = hasCustomWidth
+              ? (basisText && basisText !== "0%" ? basisText : widthText)
+              : (basisText || "0%");
+            const flexBasis = cssValue(basisCandidate) || "0%";
+            const flexGrow = hasCustomWidth
+              ? 0
+              : childFlexGrow !== undefined && Number.isFinite(configuredGrow)
+                ? Math.max(0, configuredGrow)
+                : 1;
+            const flexShrink = childFlexShrink !== undefined && Number.isFinite(configuredShrink)
+              ? Math.max(0, configuredShrink)
+              : 1;
+
+            childRules.push(
+              `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{flex-grow:${flexGrow}!important;flex-shrink:${flexShrink}!important;flex-basis:${flexBasis}!important;min-width:${childMinWidth}!important;max-width:${childMaxWidth}!important;box-sizing:border-box!important}`,
+            );
+          }        } else if (display === "flex" && direction.startsWith("column")) {
           for (const child of children) {
             if (!layoutTypes.has(child.type)) continue;
             const childStyle = resolveBuilderStyles(child.styles, device);
@@ -492,7 +513,7 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
               !resolvedChildWidth || String(resolvedChildWidth).trim() === "100%";
             if (isDefaultColumnWidth && resolvedWidthMode === "default") {
               childRules.push(
-                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%;min-width:0;box-sizing:border-box}`,
+                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important}`,
               );
             }
           }
@@ -500,7 +521,7 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
           for (const child of children) {
             if (layoutTypes.has(child.type)) {
               childRules.push(
-                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%;min-width:0;box-sizing:border-box}`,
+                `${childrenSelector} > [data-builder-node-id=${JSON.stringify(child.id)}]{width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important}`,
               );
             }
           }
@@ -596,6 +617,22 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
       }
       if (style.boxShadowHover !== undefined) add(hoverDeclarations, "--builder-style-box-shadow", style.boxShadowHover);
       if (style.opacityHover !== undefined) add(hoverDeclarations, "--builder-style-opacity", style.opacityHover);
+      if (style.transformSettingsHover) {
+        const hoverTransform = style.transformSettingsHover;
+        const hoverTransformCss = [
+          `rotateX(${hoverTransform.rotateX || 0}deg)`,
+          `rotateY(${hoverTransform.rotateY || 0}deg)`,
+          `rotateZ(${hoverTransform.rotateZ || 0}deg)`,
+          `scale(${hoverTransform.scaleX ?? 1}, ${hoverTransform.scaleY ?? 1})`,
+          `translate(${hoverTransform.translateX || "0"}, ${hoverTransform.translateY || "0"})`,
+          `skew(${hoverTransform.skewX || 0}deg, ${hoverTransform.skewY || 0}deg)`,
+        ].join(" ");
+        add(hoverDeclarations, "--builder-style-transform", hoverTransformCss);
+        if (hoverTransform.origin) {
+          add(hoverDeclarations, "--builder-style-transform-origin", hoverTransform.origin);
+        }
+      }
+      // BUILDER_HOVER_TRANSFORM_V4
 
       const selectorRules: string[] = [];
       if (root.size) {
@@ -890,34 +927,54 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         title={stringProp("tooltip") || undefined}
         target={target}
         rel={target ? "noopener noreferrer" : undefined}
+        data-builder-button-public-style="v4"
         style={{
-          display: "var(--builder-style-display, inline-flex)",
-          flexDirection: ("var(--builder-style-flex-direction, " + (initialIconPosition === "after" ? "row-reverse" : "row") + ")") as CSSProperties["flexDirection"],
-          alignItems: "center",
-          justifyContent: "center",
+          ...style,
+          display: "var(--builder-style-display, inline-flex)" as CSSProperties["display"],
+          flexDirection: `var(--builder-style-flex-direction, ${initialIconPosition === "after" ? "row-reverse" : "row"})` as CSSProperties["flexDirection"],
+          alignItems: "var(--builder-style-align-items, center)" as CSSProperties["alignItems"],
+          justifyContent: "var(--builder-style-justify-content, center)" as CSSProperties["justifyContent"],
           gap: styleProp("iconGap", "8px"),
-          width: style.width || "fit-content",
-          minWidth: 0,
-          maxWidth: "100%",
+          width: "var(--builder-style-width, fit-content)" as CSSProperties["width"],
+          minWidth: "var(--builder-style-min-width, 0px)" as CSSProperties["minWidth"],
+          maxWidth: "var(--builder-style-max-width, 100%)" as CSSProperties["maxWidth"],
+          height: "var(--builder-style-height, auto)" as CSSProperties["height"],
           boxSizing: "border-box",
-          padding: "10px 18px",
-          borderRadius: "5px",
-          backgroundColor: "#0c2f55",
-          color: "#ffffff",
-          fontSize: "13px",
-          fontWeight: 600,
-          textDecoration: "none",
+          padding: "var(--builder-style-padding, 10px 18px)" as CSSProperties["padding"],
+          margin: "var(--builder-style-margin, 0px)" as CSSProperties["margin"],
+          borderRadius: "var(--builder-style-border-radius, 5px)" as CSSProperties["borderRadius"],
+          borderStyle: "var(--builder-style-border-style, none)" as CSSProperties["borderStyle"],
+          borderWidth: "var(--builder-style-border-width, 0px)" as CSSProperties["borderWidth"],
+          borderColor: "var(--builder-style-border-color, transparent)" as CSSProperties["borderColor"],
+          backgroundColor: "var(--builder-style-background-color, #0c2f55)" as CSSProperties["backgroundColor"],
+          backgroundImage: "var(--builder-style-background-image, none)" as CSSProperties["backgroundImage"],
+          backgroundPosition: "var(--builder-style-background-position, center)" as CSSProperties["backgroundPosition"],
+          backgroundSize: "var(--builder-style-background-size, auto)" as CSSProperties["backgroundSize"],
+          backgroundRepeat: "var(--builder-style-background-repeat, repeat)" as CSSProperties["backgroundRepeat"],
+          backgroundAttachment: "var(--builder-style-background-attachment, scroll)" as CSSProperties["backgroundAttachment"],
+          color: "var(--builder-style-color, #ffffff)" as CSSProperties["color"],
+          fontFamily: "var(--builder-style-font-family, inherit)" as CSSProperties["fontFamily"],
+          fontSize: "var(--builder-style-font-size, 13px)" as CSSProperties["fontSize"],
+          fontWeight: "var(--builder-style-font-weight, 600)" as CSSProperties["fontWeight"],
+          lineHeight: "var(--builder-style-line-height, normal)" as CSSProperties["lineHeight"],
+          letterSpacing: "var(--builder-style-letter-spacing, normal)" as CSSProperties["letterSpacing"],
+          textAlign: "var(--builder-style-text-align, center)" as CSSProperties["textAlign"],
+          textTransform: "var(--builder-style-text-transform, none)" as CSSProperties["textTransform"],
+          textDecoration: "var(--builder-style-text-decoration, none)" as CSSProperties["textDecoration"],
+          boxShadow: "var(--builder-style-box-shadow, none)" as CSSProperties["boxShadow"],
+          opacity: "var(--builder-style-opacity, 1)" as CSSProperties["opacity"],
+          transform: "var(--builder-style-transform, none)" as CSSProperties["transform"],
+          transformOrigin: "var(--builder-style-transform-origin, center center)" as CSSProperties["transformOrigin"],
+          transition: "var(--builder-style-transition, background-color .2s ease, color .2s ease, border-color .2s ease, border-radius .2s ease, box-shadow .2s ease, opacity .2s ease, transform .2s ease)" as CSSProperties["transition"],
           whiteSpace: "normal",
           overflowWrap: "anywhere",
-          ...style,
         }}
       >
         {icon ? <span data-builder-button-icon="true" style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto" }}>{icon}</span> : null}
         <span data-builder-button-text="true">{text(node)}</span>
       </a>
     );
-  }
-  if (["image", "featured-image", "site-logo"].includes(node.type)) {
+  }  if (["image", "featured-image", "site-logo"].includes(node.type)) {
     const src = imageUrl(props.src || props.image);
     if (!src) return null;
     const objectFit = ["contain", "cover", "fill", "none"].includes(String(props.objectFit))
@@ -1508,3 +1565,4 @@ export default function PublicBuilderDocument({
     </>
   );
 }
+/* ELEMENTOR INDEPENDENT WIDTHS + PUBLIC LAYOUT V4 START */
