@@ -24,6 +24,11 @@ enum PageStatus {
   PUBLISHED
   ARCHIVED
 }
+enum CommentStatus {
+  PENDING
+  APPROVED
+  SPAM
+}
 
 enum RevisionType {
   DRAFT
@@ -201,6 +206,7 @@ model Post {
   categories PostCategory[]
   tags       PostTag[]
 
+  comments   Comment[]
   @@index([status, publishedAt])
   @@index([deletedAt])
   @@index([postTypeId, status, publishedAt])
@@ -428,4 +434,37 @@ model BuilderRevision {
 
   @@unique([documentId, revisionNo])
   @@index([documentId, createdAt])
+}
+model Comment {
+  id          String        @id @default(cuid())
+  postId      String
+  authorName  String        @db.VarChar(120)
+  authorEmail String        @db.VarChar(254)
+  content     String        @db.Text
+  status      CommentStatus @default(PENDING)
+  ipHash      String?       @db.Char(64)
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([deletedAt])
+  @@index([ipHash, createdAt])
+}
+
+model AdminNotification {
+  id         String    @id @default(cuid())
+  sourceType String    @db.VarChar(50)
+  sourceId   String    @db.VarChar(191)
+  title      String    @db.VarChar(200)
+  message    String    @db.VarChar(500)
+  href       String    @db.VarChar(500)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([sourceType, sourceId])
+  @@index([readAt, createdAt])
 }

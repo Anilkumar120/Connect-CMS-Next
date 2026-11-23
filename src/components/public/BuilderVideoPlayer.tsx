@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -113,7 +113,7 @@ function videoId(url: string, provider: Exclude<VideoProvider, "auto" | "self-ho
   return "";
 }
 
-function detectProvider(url: string, explicit?: string): VideoProvider {
+function detectProvider(url: string, explicit?: string): Exclude<VideoProvider, "auto"> {
   const allowed: VideoProvider[] = ["auto", "youtube", "vimeo", "dailymotion", "videopress", "self-hosted"];
   const selected = allowed.includes(explicit as VideoProvider) ? (explicit as VideoProvider) : "auto";
   if (selected !== "auto") return selected;
@@ -334,7 +334,7 @@ export default function BuilderVideoPlayer(props: BuilderVideoPlayerProps) {
       <span style={{ position: "absolute", inset: 0, background: colorWithOpacity(props.overlayColor, overlayOpacity) }} />
       {props.playIcon !== false ? (
         <span style={{ position: "relative", zIndex: 1, width: cssSize(props.playIconSize, "64px"), height: cssSize(props.playIconSize, "64px"), display: "grid", placeItems: "center", borderRadius: "50%", color: props.playIconColor || "#ffffff", background: "rgba(0,0,0,.48)", fontSize: 30, lineHeight: 1 }}>
-          â–¶
+          Ã¢â€“Â¶
         </span>
       ) : null}
     </button>
@@ -348,7 +348,7 @@ export default function BuilderVideoPlayer(props: BuilderVideoPlayerProps) {
       </div>
       {lightboxOpen ? (
         <div role="dialog" aria-modal="true" aria-label="Video lightbox" onClick={() => setLightboxOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 100000, display: "grid", placeItems: "center", padding: 24, background: "rgba(0,0,0,.88)" }}>
-          <button type="button" aria-label="Close video" onClick={() => setLightboxOpen(false)} style={{ position: "absolute", top: 16, right: 16, width: 40, height: 40, border: 0, borderRadius: 999, background: "#ffffff", color: "#111827", fontSize: 24, cursor: "pointer" }}>Ã—</button>
+          <button type="button" aria-label="Close video" onClick={() => setLightboxOpen(false)} style={{ position: "absolute", top: 16, right: 16, width: 40, height: 40, border: 0, borderRadius: 999, background: "#ffffff", color: "#111827", fontSize: 24, cursor: "pointer" }}>Ãƒâ€”</button>
           <div onClick={(event) => event.stopPropagation()} style={{ position: "relative", width: "min(1100px, 94vw)", aspectRatio: ratio, background: "#000" }}>
             {player}
           </div>
