@@ -605,7 +605,34 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
         selectorRules.push(`${childrenSelector}{${[...layout.entries()].map(([key, value]) => `--builder-layout-${key}:${value}`).join(";")}}`);
       }
       if (hoverDeclarations.size) {
-        selectorRules.push(`${selector}:hover{${[...hoverDeclarations.entries()].map(([key, value]) => `${key}:${value}`).join(";")}}`);
+        if (node.type === "icon-list") {
+          /* ICON LIST HOVER ISOLATION START */
+          // Icon List is a repeater: hovering its wrapper must not place every
+          // list item in the hover state. Apply the saved widget hover styles
+          // to only the direct LI under the pointer.
+          const itemHoverDeclarations = [...hoverDeclarations.entries()].map(
+            ([property, value]) => {
+              const cssProperty = property.replace(/^--builder-style-/, "");
+              return `${cssProperty}:${value}${cssProperty === "color" ? " !important" : ""}`;
+            },
+          );
+          const hoveredItemSelector = `${selector} > li:hover`;
+          const hoveredItemDescendantSelector = `${hoveredItemSelector} *`;
+          const itemHoverColor = hoverDeclarations.get("--builder-style-color");
+          const itemHoverRule = itemHoverDeclarations.length
+            ? `${hoveredItemSelector}{${itemHoverDeclarations.join(";")}}`
+            : "";
+          // Links and icon components may carry normal inline colors. An
+          // item-scoped important color rule overrides them only while that
+          // particular LI is hovered; adjacent LI elements remain unchanged.
+          const itemDescendantColorRule = itemHoverColor
+            ? `${hoveredItemDescendantSelector}{color:${itemHoverColor} !important}`
+            : "";
+          selectorRules.push(`${itemHoverRule}${itemDescendantColorRule}`);
+          /* ICON LIST HOVER ISOLATION END */
+        } else {
+          selectorRules.push(`${selector}:hover{${[...hoverDeclarations.entries()].map(([key, value]) => `${key}:${value}`).join(";")}}`);
+        }
       }
 
       if (selectorRules.length) {

@@ -1043,3 +1043,157 @@
   .headerPagePreviewCards { grid-template-columns: 1fr; }
 }
 /* BUILDER STICKY SCROLL PREVIEW END */
+
+/* BUILDER SECTION GRID STRUCTURE V1 START */
+.nodeToolbarActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 3px;
+  pointer-events: auto;
+}
+.nodeToolbarActions button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 3px;
+  background: rgb(255 255 255 / 14%);
+  color: #ffffff;
+  cursor: pointer;
+}
+.nodeToolbarActions button:hover:not(:disabled) {
+  background: #ffffff;
+  color: #174f91;
+}
+.nodeToolbarActions button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.gridDimensionControls {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.gridDimensionControls label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+.gridDimensionControls input {
+  width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 1px solid #dbe3ed;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #1e293b;
+  font: inherit;
+}
+.gridDimensionControls input:focus {
+  border-color: #3984e8;
+  outline: 0;
+  box-shadow: 0 0 0 2px rgb(57 132 232 / 12%);
+}
+.emptyContainer {
+  min-height: 90px;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 1px dashed #b8c9dd;
+  border-radius: 5px;
+  background: #f8fbff;
+  color: #7890aa;
+  text-align: center;
+  font-size: 11px;
+}
+.emptyCanvasIcon {
+  border: 1px dashed #93c5fd;
+  cursor: pointer;
+}
+.emptyCanvasIcon:hover {
+  border-color: #3984e8;
+  background: #dcecff;
+}
+/* BUILDER SECTION GRID STRUCTURE V1 END */
+
+/* SECTION TOOLBAR VISIBILITY V1 START
+   Keep the Elementor-style toolbar anchored to the selected Section border.
+   The higher stacking level prevents an inner Container toolbar from covering it. */
+.canvasNode[data-builder-node-type="section"] {
+  position: relative;
+  overflow: visible;
+}
+
+.canvasNode[data-builder-node-type="section"] > .nodeToolbar {
+  top: -26px;
+  left: -1px;
+  z-index: 35;
+  min-width: max-content;
+  max-width: min(520px, calc(100vw - 48px));
+  visibility: hidden;
+  opacity: 0;
+}
+
+.canvasNode[data-builder-node-type="section"]:hover > .nodeToolbar,
+.canvasNode[data-builder-node-type="section"].canvasNodeSelected > .nodeToolbar {
+  display: flex !important;
+  visibility: visible;
+  opacity: 1;
+}
+
+.canvasNode[data-builder-node-type="section"].canvasNodeSelected {
+  z-index: 30;
+}
+
+.canvasNode[data-builder-node-type="section"] > .nodeToolbar .nodeToolbarActions {
+  flex: 0 0 auto;
+}
+/* SECTION TOOLBAR VISIBILITY V1 END */
+
+/* ELEMENTOR CONTAINER WIDTH DISTRIBUTION V1 START */
+.layoutDistributionTools {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #d8e6f6;
+  border-radius: 7px;
+  background: #f6faff;
+}
+.layoutDistributionTools button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #9fc3ed;
+  border-radius: 5px;
+  background: #eaf3ff;
+  color: #174f91;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.layoutDistributionTools button:hover {
+  border-color: #3984e8;
+  background: #dcecff;
+}
+.layoutDistributionTools p,
+.flexColumnWidthHint {
+  margin: 0;
+  color: #71839a;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.flexColumnWidthHint {
+  margin: -5px 0 12px;
+}
+/* ELEMENTOR CONTAINER WIDTH DISTRIBUTION V1 END */

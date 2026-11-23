@@ -97,6 +97,7 @@ import {
 } from "@/lib/builder/responsive";
 
 import styles from "./UniversalBuilder.module.css";
+import BuilderStructurePicker, { type BuilderStructureSelection } from "./BuilderStructurePicker";
 
 import type {
   BuilderDevice,
@@ -168,6 +169,11 @@ type NodeContextMenu = {
   nodeId: string;
   left: number;
   top: number;
+} | null;
+
+type LayoutPickerContext = {
+  parentId: string | null;
+  rootSection: boolean;
 } | null;
 
 type DocumentResponse = {
@@ -1068,11 +1074,65 @@ function getCanvasWidthIndicator(
 
   if (display === 'flex' && direction.startsWith('row')) {
     const widthValue = String(style.width || '').trim();
+    const basisValue = String(style.flexBasis || '').trim();
+    const growValue = Math.max(0, Number(style.flexGrow || 0));
     const isDefaultFullWidth = widthValue === '100%' && widthMode === 'default';
+    const effectiveGrowValue = growValue > 0
+      ? growValue
+      : isDefaultFullWidth && !basisValue
+        ? 1
+        : 0;
+    const explicitPercentageText = !isDefaultFullWidth && widthValue
+      ? widthValue
+      : growValue <= 0 && basisValue && basisValue !== '0%'
+        ? basisValue
+        : '';
+    const explicitPercentage = explicitPercentageText.match(/^(\d+(?:\.\d+)?)%$/);
+    if (explicitPercentage) {
+      const percentage = Number(explicitPercentage[1]);
+      return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+    }
+
+    if (effectiveGrowValue > 0) {
+      const totalGrow = siblings.reduce((total, sibling) => {
+        const siblingStyle = getNodeInlineStyle(sibling, device);
+        const siblingGrow = Math.max(0, Number(siblingStyle.flexGrow || 0));
+        const siblingWidthValue = String(siblingStyle.width || '').trim();
+        const siblingBasisValue = String(siblingStyle.flexBasis || '').trim();
+        const siblingMode = getWidthMode(sibling.advanced?.widthMode, device);
+        const siblingIsDefaultFullWidth = siblingWidthValue === '100%' && siblingMode === 'default';
+        const effectiveSiblingGrow = siblingGrow > 0
+          ? siblingGrow
+          : siblingIsDefaultFullWidth && !siblingBasisValue
+            ? 1
+            : 0;
+        return total + effectiveSiblingGrow;
+      }, 0);
+      const fixedPercentageTotal = siblings.reduce((total, sibling) => {
+        const siblingStyle = getNodeInlineStyle(sibling, device);
+        const siblingMode = getWidthMode(sibling.advanced?.widthMode, device);
+        const siblingWidth = String(siblingStyle.width || '').trim();
+        const siblingBasis = String(siblingStyle.flexBasis || '').trim();
+        const defaultFullWidth = siblingWidth === '100%' && siblingMode === 'default';
+        const percentageText = !defaultFullWidth && siblingWidth
+          ? siblingWidth
+          : Number(siblingStyle.flexGrow || 0) <= 0 && siblingBasis && siblingBasis !== '0%'
+            ? siblingBasis
+            : '';
+        const match = percentageText.match(/^(\d+(?:\.\d+)?)%$/);
+        return total + (match ? Number(match[1]) : 0);
+      }, 0);
+      if (totalGrow > 0) {
+        const available = Math.max(0, 100 - fixedPercentageTotal);
+        const percentage = available * effectiveGrowValue / totalGrow;
+        return { label: `${Number(percentage.toFixed(2))}%`, percentage };
+      }
+    }
+
     const hasExplicitSize = Boolean(
       (widthValue && !isDefaultFullWidth) ||
-      style.flexBasis ||
-      Number(style.flexGrow || 0) > 0 ||
+      (basisValue && basisValue !== '0%') ||
+      growValue > 0 ||
       widthMode === 'custom' ||
       widthMode === 'full' ||
       widthMode === 'inline',
@@ -3408,6 +3468,8 @@ function SortableCanvasNode({
   parentNode,
   onSelect,
   onContextMenu,
+  onAddLayout,
+  onDelete,
 }: {
   node: BuilderNode;
   selectedId: string | null;
@@ -3415,6 +3477,8 @@ function SortableCanvasNode({
   parentNode?: BuilderNode | null;
   onSelect: (id: string) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
+  onAddLayout: (parentId: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const locked = Boolean(node.locked || node.advanced?.locked);
   const sortable = useSortable({
@@ -3448,6 +3512,7 @@ function SortableCanvasNode({
       ref={sortable.setNodeRef}
       {...sortable.attributes}
       {...sortable.listeners}
+      data-builder-node-type={node.type}
       className={`${styles.canvasNode} ${
         selected ? styles.canvasNodeSelected : ""
       } ${sortable.isDragging ? styles.canvasNodeDragging : ""}`}
@@ -3501,6 +3566,37 @@ function SortableCanvasNode({
             );
           })()}
         </span>
+        <span title="Drag to move"><Move size={11} aria-hidden="true" /></span>
+        {isLayout ? (
+          <span className={styles.nodeToolbarActions} onPointerDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              title="Add a nested container / structure"
+              aria-label={`Add a container inside ${node.label}`}
+              disabled={locked}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAddLayout(node.id);
+              }}
+            >
+              <Plus size={12} />
+            </button>
+            <button
+              type="button"
+              title={`Delete ${node.label}`}
+              aria-label={`Delete ${node.label}`}
+              disabled={locked}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDelete(node.id);
+              }}
+            >
+              <Trash2 size={12} />
+            </button>
+          </span>
+        ) : null}
       </div>
 
       {isLayout ? (
@@ -3527,6 +3623,8 @@ function SortableCanvasNode({
                       parentNode={node}
                       onSelect={onSelect}
                       onContextMenu={onContextMenu}
+                      onAddLayout={onAddLayout}
+                      onDelete={onDelete}
                     />
                   ))}
                 </div>
@@ -3791,6 +3889,7 @@ export default function UniversalBuilder({ target }: Props) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<NodeContextMenu>(null);
+  const [layoutPickerContext, setLayoutPickerContext] = useState<LayoutPickerContext>(null);
   const [nodeClipboard, setNodeClipboard] = useState<BuilderNode | null>(null);
 
   const [device, setDevice] = useState<BuilderDevice>("desktop");
@@ -4159,24 +4258,153 @@ export default function UniversalBuilder({ target }: Props) {
   };
 
   const addSection = () => {
-    const sectionId = makeId("section");
-    const containerId = makeId("container");
+    setLayoutPickerContext({ parentId: null, rootSection: true });
+  };
+
+  const openNestedLayoutPicker = (parentId: string) => {
+    setLayoutPickerContext({ parentId, rootSection: false });
+  };
+
+  const createStructuredContainer = (
+    selection: BuilderStructureSelection,
+    label = "Container",
+  ): BuilderNode => {
+    const createCell = (index: number, flexGrow?: number) => {
+      const cell = createDefaultNode(
+        "container",
+        selection.mode === "grid" ? `Grid Cell ${index + 1}` : `Column ${index + 1}`,
+        makeId("container"),
+        { contentWidth: "100%", htmlTag: "div", layoutCell: true },
+        [],
+      );
+
+      const nextStyles: BuilderStyle = {
+        ...cell.styles,
+        minHeight: { desktop: "90px" },
+        gap: { desktop: "0px" },
+        rowGap: { desktop: "0px" },
+        columnGap: { desktop: "0px" },
+      };
+
+      if (flexGrow !== undefined) {
+        delete nextStyles.width;
+        nextStyles.flexGrow = { desktop: String(flexGrow) };
+        nextStyles.flexShrink = { desktop: "1" };
+        nextStyles.flexBasis = { desktop: "0%" };
+      }
+
+      cell.styles = nextStyles;
+      return cell;
+    };
+
     const container = createDefaultNode(
       "container",
-      "Container",
-      containerId,
+      label,
+      makeId("container"),
       { contentWidth: "100%", htmlTag: "div" },
       [],
     );
-    const section = createDefaultNode(
-      "section",
-      "Section",
-      sectionId,
-      { contentWidth: "boxed", containerWidth: "1200px", htmlTag: "section" },
-      [container],
-    );
-    commitRoot([...layout.root, section]);
-    setSelectedId(section.id);
+
+    if (selection.mode === "grid") {
+      const rows = Math.max(1, Math.min(12, Math.floor(selection.rows)));
+      const columns = Math.max(1, Math.min(12, Math.floor(selection.columns)));
+      const cells = Array.from({ length: rows * columns }, (_, index) => createCell(index));
+
+      container.children = cells;
+      container.styles = {
+        ...container.styles,
+        display: { desktop: "grid" },
+        direction: { desktop: "row" },
+        gridTemplateColumns: { desktop: `repeat(${columns}, minmax(0, 1fr))` },
+        gridTemplateRows: { desktop: `repeat(${rows}, minmax(100px, auto))` },
+        gridAutoFlow: { desktop: "row" },
+        gap: { desktop: "0px" },
+        rowGap: { desktop: "0px" },
+        columnGap: { desktop: "0px" },
+      };
+      return container;
+    }
+
+    const rows = selection.rows.length ? selection.rows : [[1]];
+    if (rows.length === 1) {
+      container.children = rows[0].map((weight, index) => createCell(index, weight));
+      container.styles = {
+        ...container.styles,
+        display: { desktop: "flex" },
+        direction: { desktop: "row" },
+        flexWrap: { desktop: "nowrap" },
+        gap: { desktop: "0px" },
+        rowGap: { desktop: "0px" },
+        columnGap: { desktop: "0px" },
+      };
+      return container;
+    }
+
+    container.children = rows.map((weights, rowIndex) => {
+      const row = createDefaultNode(
+        "row",
+        `Row ${rowIndex + 1}`,
+        makeId("row"),
+        { htmlTag: "div", layoutRow: true },
+        weights.map((weight, columnIndex) => createCell(columnIndex, weight)),
+      );
+      row.styles = {
+        ...row.styles,
+        display: { desktop: "flex" },
+        direction: { desktop: "row" },
+        flexWrap: { desktop: "nowrap" },
+        gap: { desktop: "0px" },
+        rowGap: { desktop: "0px" },
+        columnGap: { desktop: "0px" },
+      };
+      return row;
+    });
+    container.styles = {
+      ...container.styles,
+      display: { desktop: "flex" },
+      direction: { desktop: "column" },
+      flexWrap: { desktop: "nowrap" },
+      gap: { desktop: "0px" },
+      rowGap: { desktop: "0px" },
+      columnGap: { desktop: "0px" },
+    };
+    return container;
+  };
+
+  const createLayoutFromPicker = (selection: BuilderStructureSelection) => {
+    if (!layoutPickerContext) return;
+
+    const container = createStructuredContainer(selection);
+
+    if (layoutPickerContext.rootSection) {
+      const section = createDefaultNode(
+        "section",
+        "Section",
+        makeId("section"),
+        { contentWidth: "boxed", containerWidth: "1200px", htmlTag: "section" },
+        [container],
+      );
+      section.styles = {
+        ...section.styles,
+        gap: { desktop: "0px" },
+        rowGap: { desktop: "0px" },
+        columnGap: { desktop: "0px" },
+      };
+      commitRoot([...layout.root, section]);
+      setSelectedId(section.id);
+    } else {
+      const parentId = layoutPickerContext.parentId;
+      const parent = parentId ? findNode(layout.root, parentId) : null;
+      if (!parent || !LAYOUT_TYPES.has(parent.type)) {
+        setError("Select a Section or Container before adding a nested structure.");
+        setLayoutPickerContext(null);
+        return;
+      }
+      commitRoot(insertTree(layout.root, parent.id, container));
+      setSelectedId(container.id);
+    }
+
+    setLayoutPickerContext(null);
     setActivePanel("settings");
     setInspectorTab("layout");
   };
@@ -4524,6 +4752,29 @@ export default function UniversalBuilder({ target }: Props) {
   };
 
   const updateResponsiveStyle = (key: keyof BuilderStyle, value: unknown) => {
+    if (key === "width" && selectedId) {
+      const parentId = findParent(layout.root, selectedId);
+      const parent = parentId ? findNode(layout.root, parentId) : null;
+      if (parent && LAYOUT_TYPES.has(parent.type)) {
+        const parentStyles = resolveBuilderStyles(parent.styles, device);
+        const parentDisplay = String(getResponsiveValue(parentStyles.display, device) || "flex");
+        const parentDirection = String(
+          getResponsiveValue(parentStyles.direction, device) ||
+            (parent.type === "row" ? "row" : "column"),
+        );
+        if (parentDisplay === "flex" && parentDirection.startsWith("row")) {
+          const columnWidth = String(value ?? "").trim() || "auto";
+          updateResponsiveStyles([
+            ["width", columnWidth],
+            ["flexBasis", columnWidth],
+            ["flexGrow", "0"],
+            ["flexShrink", "1"],
+          ]);
+          return;
+        }
+      }
+    }
+
     updateResponsiveStyles([[key, value]]);
   };
 
@@ -7113,6 +7364,125 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  const updateGridDimensions = (axis: "rows" | "columns", rawValue: number) => {
+    if (!selectedId) return;
+    const currentNode = findNode(layout.root, selectedId);
+    if (!currentNode) return;
+
+    const readCount = (value: unknown, fallback: number) => {
+      const text = String(value || "").trim();
+      const match = text.match(/^repeat\(\s*(\d+)/i);
+      if (match) return Math.max(1, Math.min(12, Number(match[1])));
+      if (!text || text === "auto" || text === "none") return fallback;
+      return Math.max(1, Math.min(12, text.split(/\s+/).filter(Boolean).length));
+    };
+
+    const existingChildren = currentNode.children || [];
+    const currentColumns = readCount(
+      getResponsiveValue(currentNode.styles.gridTemplateColumns, device),
+      Math.max(1, existingChildren.length || 1),
+    );
+    const currentRows = readCount(
+      getResponsiveValue(currentNode.styles.gridTemplateRows, device),
+      Math.max(1, Math.ceil((existingChildren.length || 1) / currentColumns)),
+    );
+    const rows = axis === "rows" ? Math.max(1, Math.min(12, Math.floor(rawValue || 1))) : currentRows;
+    const columns = axis === "columns" ? Math.max(1, Math.min(12, Math.floor(rawValue || 1))) : currentColumns;
+    const requiredCells = rows * columns;
+
+    commitRoot(
+      updateTree(layout.root, selectedId, (nodeToUpdate) => {
+        let children = [...(nodeToUpdate.children || [])];
+        const generatedCellsOnly = children.every((child) => child.props.layoutCell === true);
+
+        if (generatedCellsOnly) {
+          while (children.length < requiredCells) {
+            const cell = createDefaultNode(
+              "container",
+              `Grid Cell ${children.length + 1}`,
+              makeId("container"),
+              { contentWidth: "100%", htmlTag: "div", layoutCell: true },
+              [],
+            );
+            cell.styles = { ...cell.styles, minHeight: { desktop: "90px" } };
+            children.push(cell);
+          }
+
+          while (children.length > requiredCells) {
+            let removableIndex = -1;
+            for (let index = children.length - 1; index >= 0; index -= 1) {
+              const candidate = children[index];
+              if (candidate.props.layoutCell === true && !(candidate.children || []).length) {
+                removableIndex = index;
+                break;
+              }
+            }
+            if (removableIndex < 0) break;
+            children.splice(removableIndex, 1);
+          }
+        }
+
+        const currentGridColumnsStyle = nodeToUpdate.styles.gridTemplateColumns || {};
+        const currentGridRowsStyle = nodeToUpdate.styles.gridTemplateRows || {};
+        const nextStyles: BuilderStyle = {
+          ...nodeToUpdate.styles,
+          gridTemplateColumns: {
+            ...currentGridColumnsStyle,
+            [device]: `repeat(${columns}, minmax(0, 1fr))`,
+          },
+          gridTemplateRows: {
+            ...currentGridRowsStyle,
+            [device]: `repeat(${rows}, minmax(100px, auto))`,
+          },
+        };
+
+        return { ...nodeToUpdate, children, styles: nextStyles };
+      }),
+    );
+  };
+  const distributeSelectedChildrenEqually = () => {
+    if (!selectedId) return;
+    const selectedParent = findNode(layout.root, selectedId);
+    if (!selectedParent) return;
+    const layoutChildCount = (selectedParent.children || []).filter((child) =>
+      LAYOUT_TYPES.has(child.type),
+    ).length;
+    if (layoutChildCount < 2) return;
+
+    commitRoot(
+      updateTree(layout.root, selectedId, (parentNode) => ({
+        ...parentNode,
+        children: (parentNode.children || []).map((child) => {
+          if (!LAYOUT_TYPES.has(child.type)) return child;
+
+          const nextStyles: BuilderStyle = { ...child.styles };
+          const setForCurrentDevice = (
+            key: "width" | "flexBasis" | "flexGrow" | "flexShrink",
+            value: string,
+          ) => {
+            const currentValue = nextStyles[key];
+            const current = currentValue && typeof currentValue === "object"
+              ? currentValue as Record<string, unknown>
+              : currentValue !== undefined && currentValue !== null
+                ? { desktop: currentValue }
+                : {};
+            (nextStyles as unknown as Record<string, unknown>)[key] = {
+              ...current,
+              [device]: value,
+            };
+          };
+
+          // auto width + 0 basis + grow 1 yields equal columns without gaps.
+          setForCurrentDevice("width", "auto");
+          setForCurrentDevice("flexBasis", "0%");
+          setForCurrentDevice("flexGrow", "1");
+          setForCurrentDevice("flexShrink", "1");
+
+          return { ...child, styles: nextStyles };
+        }),
+      })),
+    );
+  };
   const renderLayoutPanel = () => {
     if (!selectedNode) return null;
 
@@ -7121,6 +7491,48 @@ export default function UniversalBuilder({ target }: Props) {
     const selectedDisplay =
       getResponsiveValue(node.styles.display, device) ||
       (node.type === "grid" ? "grid" : "flex");
+    const readTrackCount = (value: unknown, fallback: number) => {
+      const text = String(value || "").trim();
+      const repeat = text.match(/^repeat\(\s*(\d+)/i);
+      if (repeat) return Math.max(1, Math.min(12, Number(repeat[1])));
+      if (!text || text === "auto" || text === "none") return fallback;
+      return Math.max(1, Math.min(12, text.split(/\s+/).filter(Boolean).length));
+    };
+    const currentGridColumns = readTrackCount(
+      getResponsiveValue(node.styles.gridTemplateColumns, device),
+      Math.max(1, node.children?.length || 1),
+    );
+    const currentGridRows = readTrackCount(
+      getResponsiveValue(node.styles.gridTemplateRows, device),
+      Math.max(1, Math.ceil((node.children?.length || 1) / currentGridColumns)),
+    );
+    const gridColumns = currentGridColumns;
+    const gridRows = currentGridRows;
+    const selectedDirection = String(
+      getResponsiveValue(node.styles.direction, device) ||
+        (node.type === "row" ? "row" : "column"),
+    );
+    const directLayoutChildren = (node.children || []).filter((child) =>
+      LAYOUT_TYPES.has(child.type),
+    );
+    const selectedParentId = findParent(layout.root, node.id);
+    const selectedParent = selectedParentId ? findNode(layout.root, selectedParentId) : null;
+    const selectedParentStyles = selectedParent
+      ? resolveBuilderStyles(selectedParent.styles, device)
+      : null;
+    const selectedParentDisplay = selectedParentStyles
+      ? String(getResponsiveValue(selectedParentStyles.display, device) || "flex")
+      : "";
+    const selectedParentDirection = selectedParentStyles
+      ? String(
+          getResponsiveValue(selectedParentStyles.direction, device) ||
+            (selectedParent?.type === "row" ? "row" : "column"),
+        )
+      : "";
+    const isFlexRowChild =
+      Boolean(selectedParent) &&
+      selectedParentDisplay === "flex" &&
+      selectedParentDirection.startsWith("row");
 
     return (
       <>
@@ -7212,6 +7624,47 @@ export default function UniversalBuilder({ target }: Props) {
             ]}
             onChange={(value) => updateResponsiveStyle("flexWrap", value)}
           />
+
+          {selectedDisplay === "grid" ? (
+            <div className={styles.gridDimensionControls}>
+              <label>
+                <span>Grid Rows</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={gridRows}
+                  onChange={(event) => updateGridDimensions("rows", Number(event.target.value))}
+                />
+              </label>
+              <label>
+                <span>Grid Columns</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={gridColumns}
+                  onChange={(event) => updateGridDimensions("columns", Number(event.target.value))}
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {selectedDisplay === "flex" &&
+          selectedDirection.startsWith("row") &&
+          directLayoutChildren.length > 1 ? (
+            <div className={styles.layoutDistributionTools}>
+              <button
+                type="button"
+                onClick={distributeSelectedChildrenEqually}
+              >
+                Equal widths
+              </button>
+              <p>
+                Equalize all direct containers, or select an individual container and set its Column Width to values such as 60% or 40%.
+              </p>
+            </div>
+          ) : null}
         </ControlGroup>
 
         <ControlGroup title="Size">
@@ -7225,13 +7678,19 @@ export default function UniversalBuilder({ target }: Props) {
             }}
           >
             <UnitControl
-              label="Width"
+              label={isFlexRowChild ? "Column Width" : "Width"}
               value={String(
-                getResponsiveValue(node.styles.width, device) || "",
+                getResponsiveValue(node.styles.width, device) ||
+                  (isFlexRowChild && Number(getResponsiveValue(node.styles.flexGrow, device) || 0) > 0 ? "auto" : ""),
               )}
               onChange={(value) => updateResponsiveStyle("width", value)}
-              placeholder="100%"
+              placeholder={isFlexRowChild ? "60% / 40% / auto" : "100%"}
             />
+            {isFlexRowChild ? (
+              <p className={styles.flexColumnWidthHint}>
+                This width is applied to this container only. Set each column separately, or use Equal widths on its parent.
+              </p>
+            ) : null}
 
             <UnitControl
               label="Height"
@@ -9446,9 +9905,15 @@ export default function UniversalBuilder({ target }: Props) {
                 <DropArea id="root" className={styles.canvasElements}>
                   {layout.root.length === 0 ? (
                     <div className={styles.emptyCanvas}>
-                      <div className={styles.emptyCanvasIcon}>
+                      <button
+                        type="button"
+                        className={styles.emptyCanvasIcon}
+                        title="Add a Section or Grid"
+                        aria-label="Add a Section or Grid"
+                        onClick={addSection}
+                      >
                         <Plus size={25} />
-                      </div>
+                      </button>
 
                       <h2>Start building your {target.kind}</h2>
 
@@ -9492,6 +9957,8 @@ export default function UniversalBuilder({ target }: Props) {
                             );
                           }}
                           onContextMenu={openNodeContextMenu}
+                          onAddLayout={openNestedLayoutPicker}
+                          onDelete={deleteNode}
                         />
                       ))}
                     </SortableContext>
@@ -9524,6 +9991,14 @@ export default function UniversalBuilder({ target }: Props) {
             </div>
           </section>
         </div>
+
+        {layoutPickerContext ? (
+          <BuilderStructurePicker
+            targetLabel={layoutPickerContext.rootSection ? "section" : "container"}
+            onClose={() => setLayoutPickerContext(null)}
+            onCreate={createLayoutFromPicker}
+          />
+        ) : null}
 
         {contextMenu ? (
           <>
