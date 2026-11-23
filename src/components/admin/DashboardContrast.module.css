@@ -1,0 +1,20 @@
+/* DASHBOARD WELCOME CONTRAST FIX START
+   Keep the global admin theme for normal pages, but preserve readable
+   foreground colors inside the dark blue dashboard welcome banner.
+*/
+.scope :global(.admin-page-content .dashboard-welcome) {
+  color: #ffffff !important;
+}
+
+.scope :global(.admin-page-content .dashboard-welcome h2) {
+  color: #ffffff !important;
+}
+
+.scope :global(.admin-page-content .dashboard-welcome p:not([class*="error" i]):not([class*="success" i]):not([class*="status" i])) {
+  color: #e7f2ff !important;
+}
+
+.scope :global(.admin-page-content .dashboard-welcome .welcome-label) {
+  color: #b9d9ff !important;
+}
+/* DASHBOARD WELCOME CONTRAST FIX END */

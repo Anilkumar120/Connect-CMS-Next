@@ -10,6 +10,7 @@ import {
 import { usePathname, useSearchParams } from "next/navigation";
 import AdminSidebar from "./AdminSidebar";
 import AdminTopbar from "./AdminTopbar";
+import dashboardContrast from "./DashboardContrast.module.css";
 
 type AdminUser = {
   id: string;
@@ -90,7 +91,7 @@ function AdminLayoutFrame({
   return (
     <div
       ref={shellRef}
-      className={`admin-shell ${
+      className={`admin-shell ${dashboardContrast.scope} ${
         collapsed ? "sidebar-collapsed" : ""
       } ${builderMode ? "admin-builder-mode" : ""}`}
     >
