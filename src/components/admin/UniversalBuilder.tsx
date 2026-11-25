@@ -2096,6 +2096,7 @@ function ControlGroup({
 ------------------------------------------------------- */
 
 // BUILDER_LIST_LAYOUT_V6_2
+// BUILDER_ICON_SOCIAL_GAP_V6_4
 function PreviewNode({
   node,
   device,
@@ -2408,6 +2409,8 @@ function PreviewNode({
           justifyContent: listLayout === "inline" ? listAlignValue : "flex-start",
           justifyItems: listLayout === "grid" ? (listAlignment === "center" ? "center" : listAlignment === "right" ? "end" : "start") : undefined,
           gap: itemSpacing,
+          rowGap: itemSpacing,
+          columnGap: itemSpacing,
         }}
       >
         {items.map((item, index) => {
@@ -2462,9 +2465,10 @@ function PreviewNode({
     const iconSizeCss = cssLength(props.iconSize, "22px");
     const buttonSizeCss = cssLength(props.buttonSize, "40px");
     const shape = String(props.shape || "circle");
+    const iconGap = cssLength(props.gap, "12px");
     const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: cssLength(props.gap, "12px") }}>
+      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: iconGap, rowGap: iconGap, columnGap: iconGap }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
           const SocialIcon = name ? themeIcons[name] : null;

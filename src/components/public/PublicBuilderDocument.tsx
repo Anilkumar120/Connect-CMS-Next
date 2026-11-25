@@ -797,6 +797,7 @@ export type PublicBuilderPostContext = {
 };
 
 // PUBLIC_LIST_LAYOUT_V6_2
+// PUBLIC_ICON_SOCIAL_GAP_V6_4
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
@@ -1046,6 +1047,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       justifyContent: listLayout === "inline" ? `var(--builder-prop-list-justify, ${align})` as CSSProperties["justifyContent"] : "flex-start",
       justifyItems: listLayout === "grid" ? `var(--builder-prop-list-justify-items, ${alignment === "center" ? "center" : alignment === "right" ? "end" : "start"})` : undefined,
       gap: listGap,
+      rowGap: listGap,
+      columnGap: listGap,
     };
 
     return (
@@ -1466,8 +1469,9 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const sizeCss = styleProp("iconSize", cssLength(props.iconSize, "22px"));
     const buttonSizeCss = styleProp("buttonSize", cssLength(props.buttonSize, "40px"));
     const shape = stringProp("shape", "circle");
+    const iconGap = styleProp("gap", stringProp("gap", "12px"));
     const radius = styleProp("shapeRadius", shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
-    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: styleProp("gap", stringProp("gap", "12px")) }}>{icons.map((icon, index) => {
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: iconGap, rowGap: iconGap, columnGap: iconGap }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;
       const name = String(entry.iconName || entry.name || "");
