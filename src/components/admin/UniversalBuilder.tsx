@@ -161,7 +161,7 @@ type IconPickerTarget =
   | { kind: "button"; value: string }
   | { kind: "widget"; value: string }
   | { kind: "nodeProp"; key: string; value: string }
-  | { kind: "repeaterItem"; index: number; key: "items" | "icons"; value: string }
+  | { kind: "repeaterItem"; index: number; key: "items" | "icons" | "tabs"; value: string }
   | { kind: "slideButton"; slideIndex: number; buttonIndex: number; value: string }
   | null;
 
@@ -1749,6 +1749,55 @@ function UnitControl({
   );
 }
 
+function RangeUnitControl({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
+  const parsed = readCssMeasure(value, false);
+  const unit = parsed.unit === "custom" || parsed.unit === "auto" ? "px" : parsed.unit;
+  const numeric = Number(parsed.number || 0);
+  const rangeValue = Math.max(min, Math.min(max, Number.isFinite(numeric) ? numeric : 0));
+  return (
+    <Field label={label}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 82px", gap: 10, alignItems: "center", minWidth: 0 }}>
+        <input
+          aria-label={`${label} slider`}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={rangeValue}
+          onChange={(event) => onChange(`${event.target.value}${unit}`)}
+          style={{ width: "100%", minWidth: 0, accentColor: "#3984e8", cursor: "pointer" }}
+        />
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 4 }}>
+          <input
+            aria-label={`${label} value`}
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={parsed.number}
+            onChange={(event) => onChange(event.target.value ? `${event.target.value}${unit}` : "")}
+            style={{ ...CONTROL_STYLE, width: "100%", minWidth: 0, padding: "7px 6px" }}
+          />
+          <span style={{ color: "#64748b", fontSize: 11 }}>{unit}</span>
+        </div>
+      </div>
+    </Field>
+  );
+}
 function SegmentedControl({
   label,
   value,
@@ -2046,6 +2095,7 @@ function ControlGroup({
    Canvas Preview
 ------------------------------------------------------- */
 
+// BUILDER_LIST_LAYOUT_V6_2
 function PreviewNode({
   node,
   device,
@@ -2054,6 +2104,7 @@ function PreviewNode({
   device: BuilderDevice;
 }) {
   const [activeTab, setActiveTab] = useState(0);
+  const [hoveredTab, setHoveredTab] = useState<number | null>(null);
   const [hovered, setHovered] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -2336,8 +2387,10 @@ function PreviewNode({
     const listColumns = Math.max(1, Math.min(6, Number(props.columns) || 2));
     const iconSizeCss = cssLength(props.iconSize, "16px");
     const itemGap = cssLength(props.iconGap, "9px");
-    const itemSpacing = cssLength(props.itemSpacing, "10px");
-    const display = listLayout === "inline" ? "flex" : "grid";
+    const itemSpacing = cssLength(props.itemSpacing, "12px");
+    const listAlignment = String(props.listAlignment || "left");
+    const listAlignValue = listAlignment === "center" ? "center" : listAlignment === "right" ? "flex-end" : "flex-start";
+    const display = listLayout === "grid" ? "grid" : "flex";
 
     return (
       <ul
@@ -2351,9 +2404,10 @@ function PreviewNode({
           flexDirection: inlineStyle.flexDirection || (listLayout === "inline" ? "row" : "column"),
           flexWrap: inlineStyle.flexWrap || (listLayout === "inline" ? "wrap" : "nowrap"),
           gridTemplateColumns: inlineStyle.gridTemplateColumns || (listLayout === "grid" ? `repeat(${listColumns}, minmax(0, 1fr))` : undefined),
-          alignItems: inlineStyle.alignItems || "stretch",
-          justifyContent: inlineStyle.justifyContent || "flex-start",
-          gap: inlineStyle.gap || itemSpacing,
+          alignItems: listLayout === "inline" ? "center" : listAlignValue,
+          justifyContent: listLayout === "inline" ? listAlignValue : "flex-start",
+          justifyItems: listLayout === "grid" ? (listAlignment === "center" ? "center" : listAlignment === "right" ? "end" : "start") : undefined,
+          gap: itemSpacing,
         }}
       >
         {items.map((item, index) => {
@@ -2392,8 +2446,7 @@ function PreviewNode({
                 alignItems: "center",
                 minWidth: 0,
                 gap: itemGap,
-                borderBottom: props.divider ? "1px solid #e2e8f0" : undefined,
-                paddingBottom: props.divider ? itemSpacing : undefined,
+                borderBottom: props.divider ? `1px solid ${String(props.dividerColor || "#e2e8f0")}` : undefined,
               }}
             >
               {href ? <a href={href} style={contentStyle}>{content}</a> : <span style={contentStyle}>{content}</span>}
@@ -2409,9 +2462,9 @@ function PreviewNode({
     const iconSizeCss = cssLength(props.iconSize, "22px");
     const buttonSizeCss = cssLength(props.buttonSize, "40px");
     const shape = String(props.shape || "circle");
-    const radius = shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px";
+    const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: inlineStyle.gap || cssLength(props.gap, "12px") }}>
+      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: cssLength(props.gap, "12px") }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
           const SocialIcon = name ? themeIcons[name] : null;
@@ -2961,39 +3014,44 @@ function PreviewNode({
 
   if (node.type === "accordion") {
     const items = Array.isArray(props.items)
-      ? (props.items as Array<{
-          id?: string;
-          title?: string;
-          content?: string;
-        }>)
+      ? (props.items as Array<{ id?: string; title?: string; content?: string; iconName?: string; iconImage?: string }>)
       : [];
+    const itemGap = cssLength(props.itemSpacing, "8px");
+    const itemRadius = cssLength(props.itemRadius, "6px");
+    const headerPadding = cssLength(props.headerPadding, "12px 14px");
+    const contentPadding = cssLength(props.contentPadding, "12px 14px");
+    const dividerColor = String(props.dividerColor || "#e2e8f0");
+    const titleColor = String(props.titleColor || "#0c2f55");
+    const itemIconSize = cssLength(props.itemIconSize, "16px");
+    const itemIconColor = String(props.itemIconColor || "#3984e8");
 
     return (
-      <div {...commonProps}>
-        {items.map((item, index) => (
-          <details
-            key={item.id || index}
-            open={Boolean(props.firstOpen) && index === 0}
-            style={{
-              borderBottom: "1px solid #e2e8f0",
-              padding: "12px 0",
-            }}
-          >
-            <summary
-              style={{
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
+      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: "column", gap: itemGap, minWidth: 0 }}>
+        {items.map((item, index) => {
+          const Icon = item.iconName ? themeIcons[item.iconName] : null;
+          const image = safeMediaUrl(String(item.iconImage || ""));
+          return (
+            <details
+              key={item.id || index}
+              open={Boolean(props.firstOpen) && index === 0}
+              style={{ border: `1px solid ${dividerColor}`, borderRadius: itemRadius, overflow: "hidden", background: String(props.titleBackground || "#f8fafc") }}
             >
-              {item.title || `Item ${index + 1}`}
-            </summary>
-            <div style={{ paddingTop: 9 }}>{item.content || ""}</div>
-          </details>
-        ))}
+              <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: headerPadding, color: titleColor, cursor: "pointer", fontWeight: 600, listStyle: "none" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  {image ? <img src={image} alt="" style={{ width: itemIconSize, height: itemIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={16} style={{ width: itemIconSize, height: itemIconSize, color: itemIconColor, flex: "0 0 auto" }} /> : null}
+                  <span>{item.title || `Item ${index + 1}`}</span>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </summary>
+              <div style={{ padding: contentPadding, color: String(props.contentColor || "#334155"), background: String(props.contentBackground || "#ffffff"), borderTop: `1px solid ${dividerColor}` }}>
+                {item.content || ""}
+              </div>
+            </details>
+          );
+        })}
       </div>
     );
   }
-
   if (node.type === "toggle") {
     return (
       <details {...commonProps} open={Boolean(props.open)}>
@@ -3012,44 +3070,50 @@ function PreviewNode({
 
   if (node.type === "tabs") {
     const tabs = Array.isArray(props.tabs)
-      ? (props.tabs as Array<{
-          id?: string;
-          title?: string;
-          content?: string;
-        }>)
+      ? (props.tabs as Array<{ id?: string; title?: string; content?: string; iconName?: string; iconImage?: string }>)
       : [];
+    const tabGap = cssLength(props.tabGap, "6px");
+    const tabRadius = cssLength(props.tabRadius, "6px");
+    const tabPadding = cssLength(props.tabPadding, "9px 14px");
+    const tabIconSize = cssLength(props.tabIconSize, "15px");
+    const tabIconColor = String(props.tabIconColor || "#334155");
+    const alignment = String(props.tabAlignment || "left");
+    const justify = alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start";
+    const activeIndex = Math.max(0, Math.min(activeTab, Math.max(0, tabs.length - 1)));
+    const active = tabs[activeIndex];
+    const dividerColor = String(props.tabDividerColor || "#e2e8f0");
 
     return (
-      <div {...commonProps}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 5,
-            borderBottom: "1px solid #e2e8f0",
-          }}
-        >
-          {tabs.map((tab, index) => (
-            <button
-              key={tab.id || index}
-              type="button"
-              onClick={() => setActiveTab(index)}
-              style={{
-                ...BUTTON_STYLE,
-                borderColor: activeTab === index ? "#3984e8" : "#cbd5e1",
-                color: activeTab === index ? "#2164c5" : "#334155",
-              }}
-            >
-              {tab.title || `Tab ${index + 1}`}
-            </button>
-          ))}
+      <div {...commonProps} style={{ ...inlineStyle, minWidth: 0 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: justify, alignItems: "center", gap: tabGap, borderBottom: `1px solid ${dividerColor}` }}>
+          {tabs.map((tab, index) => {
+            const isActive = activeIndex === index;
+            const isHovered = hoveredTab === index && !isActive;
+            const Icon = tab.iconName ? themeIcons[tab.iconName] : null;
+            const image = safeMediaUrl(String(tab.iconImage || ""));
+            return (
+              <button
+                key={tab.id || index}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTab(index)}
+                onMouseEnter={() => setHoveredTab(index)}
+                onMouseLeave={() => setHoveredTab(null)}
+                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: tabPadding, border: `1px solid ${isActive ? String(props.tabActiveBackground || "#0c2f55") : dividerColor}`, borderBottom: isActive ? `2px solid ${String(props.tabActiveBackground || "#0c2f55")}` : `1px solid ${dividerColor}`, borderRadius: `${tabRadius} ${tabRadius} 0 0`, background: String(isActive ? props.tabActiveBackground || "#0c2f55" : isHovered ? props.tabHoverBackground || "#e2e8f0" : props.tabNormalBackground || "#f1f5f9"), color: String(isActive ? props.tabActiveColor || "#ffffff" : isHovered ? props.tabHoverColor || "#0c2f55" : props.tabNormalColor || "#334155"), fontWeight: isActive ? 700 : 500, cursor: "pointer" }}
+              >
+                {image ? <img src={image} alt="" style={{ width: tabIconSize, height: tabIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={15} aria-hidden="true" style={{ width: tabIconSize, height: tabIconSize, color: tabIconColor }} /> : null}
+                {tab.title || `Tab ${index + 1}`}
+              </button>
+            );
+          })}
         </div>
-
-        <div style={{ padding: 12 }}>{tabs[activeTab]?.content || ""}</div>
+        <div role="tabpanel" style={{ padding: cssLength(props.tabContentPadding, "14px"), color: String(props.tabContentColor || "#334155"), background: String(props.tabContentBackground || "#ffffff"), border: `1px solid ${dividerColor}`, borderTop: 0, minWidth: 0 }}>
+          {active?.content || ""}
+        </div>
       </div>
     );
   }
-
   if (node.type === "form") {
     const fields = Array.isArray(props.fields)
       ? (props.fields as Array<{
@@ -6077,6 +6141,14 @@ export default function UniversalBuilder({ target }: Props) {
       updateProps(repeaterKey, [...repeaterItems, base]);
     };
     const removeRepeaterItem = (index: number) => updateProps(repeaterKey, repeaterItems.filter((_, i) => i !== index));
+    const duplicateRepeaterItem = (index: number) => {
+      const source = repeaterItems[index];
+      if (!source) return;
+      const copy = { ...source, id: `${String(source.id || repeaterKey)}-copy-${Date.now()}` };
+      const next = [...repeaterItems];
+      next.splice(index + 1, 0, copy);
+      updateProps(repeaterKey, next);
+    };
 
     return (
       <>
@@ -7097,9 +7169,12 @@ export default function UniversalBuilder({ target }: Props) {
             <ControlGroup title="Items" defaultOpen>
               {repeaterItems.map((entry, index) => (
                 <div key={String(entry.id || index)} style={{ border: "1px solid #dbe3ed", borderRadius: 8, padding: 10, marginBottom: 10, background: "#fff" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
                     <strong style={{ fontSize: 12 }}>{node.type === "social-icons" ? `Social icon ${index + 1}` : node.type === "icon-list" ? `List item ${index + 1}` : `Item ${index + 1}`}</strong>
-                    <button type="button" aria-label="Remove item" style={{ ...BUTTON_STYLE, color: "#b42318" }} onClick={() => removeRepeaterItem(index)}><Trash2 size={14} /></button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button type="button" aria-label="Duplicate item" title="Duplicate item" style={BUTTON_STYLE} onClick={() => duplicateRepeaterItem(index)}><Copy size={14} /></button>
+                      <button type="button" aria-label="Remove item" title="Delete item" style={{ ...BUTTON_STYLE, color: "#b42318" }} onClick={() => removeRepeaterItem(index)}><Trash2 size={14} /></button>
+                    </div>
                   </div>
                   {node.type === "social-icons" ? (
                     <>
@@ -7156,7 +7231,23 @@ export default function UniversalBuilder({ target }: Props) {
                   ) : node.type === "price-list" ? (
                     <><TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} /><TextControl label="Price" value={String(entry.price || "")} onChange={(value) => updateRepeaterItem(index, { price: value })} /><TextControl label="Description" value={String(entry.description || "")} onChange={(value) => updateRepeaterItem(index, { description: value })} /></>
                   ) : (
-                    <><TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} /><Field label="Content"><textarea rows={4} value={String(entry.content || "")} onChange={(event) => updateRepeaterItem(index, { content: event.target.value })} style={CONTROL_STYLE} /></Field></>
+                    <>
+                      <Field label="Item Icon (Optional)">
+                        <button
+                          type="button"
+                          style={{ ...BUTTON_STYLE, width: "100%", justifyContent: "flex-start" }}
+                          onClick={() => setIconPickerTarget({ kind: "repeaterItem", index, key: repeaterKey as "items" | "tabs", value: String(entry.iconName || "") })}
+                        >
+                          {(() => {
+                            const ItemIcon = themeIcons[String(entry.iconName || "")];
+                            return ItemIcon ? <ItemIcon size={17} /> : <Search size={17} />;
+                          })()}
+                          {String(themeIconLabels[String(entry.iconName || "")] || entry.iconName || "Choose icon")}
+                        </button>
+                      </Field>
+                      <TextControl label="Title" value={String(entry.title || "")} onChange={(value) => updateRepeaterItem(index, { title: value })} />
+                      <Field label="Content"><textarea rows={4} value={String(entry.content || "")} onChange={(event) => updateRepeaterItem(index, { content: event.target.value })} style={CONTROL_STYLE} /></Field>
+                    </>
                   )}
                 </div>
               ))}
@@ -7878,7 +7969,23 @@ export default function UniversalBuilder({ target }: Props) {
 
     return (
       <>
+        {/* BUILDER_LIST_LAYOUT_V6_2: layout background color is responsive and stored with the node background. */}
+        <ControlGroup title="Background" defaultOpen>
+          <ColorControl
+            label="Background Color"
+            value={String(getResponsiveScalar(node.styles.background?.color, device) || "transparent")}
+            onChange={(value) => {
+              const rawColor = node.styles.background?.color;
+              const colorByDevice = typeof rawColor === "string" ? { desktop: rawColor } : rawColor || {};
+              updateBackground("color", { ...colorByDevice, [device]: value });
+            }}
+          />
+          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 11, lineHeight: 1.45 }}>
+            Gradient, image and hover backgrounds are available in the Style tab.
+          </p>
+        </ControlGroup>
         <ControlGroup title="Container Layout" defaultOpen>
+
           <SegmentedControl
             label="Display"
             value={String(selectedDisplay)}
@@ -8558,22 +8665,40 @@ export default function UniversalBuilder({ target }: Props) {
           <ControlGroup title="Icon Styling" defaultOpen>
             <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
             <UnitControl label="Icon Size" value={String(deviceProps.iconSize || deviceProps.size || "24px")} onChange={(value) => updateResponsiveProp(node.type === "icon" ? "size" : "iconSize", value)} allowAuto={false} />
-            {node.type === "social-icons" ? <><ColorControl label="Icon Background" value={String(deviceProps.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} /><UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} /></> : null}
+            {node.type === "social-icons" ? (
+              <>
+                <ColorControl label="Icon Background" value={String(deviceProps.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} />
+                <UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} />
+                <RangeUnitControl label="Icon Gap" value={String(deviceProps.gap || "12px")} onChange={(value) => updateResponsiveProp("gap", value)} min={0} max={80} />
+                <UnitControl label="Shape Radius" value={String(deviceProps.shapeRadius || (deviceProps.shape === "square" ? "4px" : deviceProps.shape === "rounded" ? "10px" : "999px"))} onChange={(value) => updateResponsiveProp("shapeRadius", value)} allowAuto={false} />
+              </>
+            ) : null}
           </ControlGroup>
         ) : null}
         {node.type === "icon-list" ? (
-          <ControlGroup title="Icon List Styling" defaultOpen>
-            <UnitControl label="Icon Size" value={String(deviceProps.iconSize || "16px")} onChange={(value) => updateResponsiveProp("iconSize", value)} allowAuto={false} />
-            <ColorControl label="Icon Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
-            <ColorControl label="Text Color" value={String(deviceProps.textColor || "#334155")} onChange={(value) => updateResponsiveProp("textColor", value)} />
-            <ColorControl label="Link Color" value={String(deviceProps.linkColor || "#334155")} onChange={(value) => updateResponsiveProp("linkColor", value)} />
-            <UnitControl label="Icon / Text Gap" value={String(deviceProps.iconGap || "9px")} onChange={(value) => updateResponsiveProp("iconGap", value)} allowAuto={false} />
-            <UnitControl label="Item Spacing" value={String(deviceProps.itemSpacing || "12px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} allowAuto={false} />
-            <ColorControl label="Divider Color" value={String(deviceProps.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
-            <Field label="Show Dividers"><input type="checkbox" checked={Boolean(deviceProps.divider)} onChange={(event) => updateResponsiveProp("divider", event.target.checked)} /></Field>
-          </ControlGroup>
-        ) : null}
-        {(node.type === "tabs" || node.type === "post-tabs") ? (
+          <>
+            <ControlGroup title="List" defaultOpen>
+              <RangeUnitControl label="Space Between" value={String(deviceProps.itemSpacing || "12px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} min={0} max={80} />
+              <SegmentedControl
+                label="Alignment"
+                value={String(deviceProps.listAlignment || "left")}
+                options={[{ label: "", value: "left", title: "Left", icon: "AlignLeft" }, { label: "", value: "center", title: "Center", icon: "AlignCenter" }, { label: "", value: "right", title: "Right", icon: "AlignRight" }]}
+                onChange={(value) => updateResponsiveProp("listAlignment", value)}
+              />
+              <Field label="Divider"><input type="checkbox" checked={Boolean(deviceProps.divider)} onChange={(event) => updateResponsiveProp("divider", event.target.checked)} /></Field>
+              <ColorControl label="Divider Color" value={String(deviceProps.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
+            </ControlGroup>
+            <ControlGroup title="Icon">
+              <UnitControl label="Size" value={String(deviceProps.iconSize || "16px")} onChange={(value) => updateResponsiveProp("iconSize", value)} allowAuto={false} />
+              <ColorControl label="Color" value={String(deviceProps.iconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("iconColor", value)} />
+              <UnitControl label="Icon / Text Gap" value={String(deviceProps.iconGap || "9px")} onChange={(value) => updateResponsiveProp("iconGap", value)} allowAuto={false} />
+            </ControlGroup>
+            <ControlGroup title="Text">
+              <ColorControl label="Text Color" value={String(deviceProps.textColor || "#334155")} onChange={(value) => updateResponsiveProp("textColor", value)} />
+              <ColorControl label="Link Color" value={String(deviceProps.linkColor || "#334155")} onChange={(value) => updateResponsiveProp("linkColor", value)} />
+            </ControlGroup>
+          </>
+        ) : null}        {(node.type === "tabs" || node.type === "post-tabs") ? (
           <ControlGroup title="Tabs Styling" defaultOpen>
             <ColorControl label="Normal Text Color" value={String(deviceProps.tabNormalColor || "#334155")} onChange={(value) => updateResponsiveProp("tabNormalColor", value)} />
             <ColorControl label="Normal Background" value={String(deviceProps.tabNormalBackground || "#f1f5f9")} onChange={(value) => updateResponsiveProp("tabNormalBackground", value)} />
@@ -8581,6 +8706,20 @@ export default function UniversalBuilder({ target }: Props) {
             <ColorControl label="Hover Background" value={String(deviceProps.tabHoverBackground || "#e2e8f0")} onChange={(value) => updateResponsiveProp("tabHoverBackground", value)} />
             <ColorControl label="Active Text Color" value={String(deviceProps.tabActiveColor || "#ffffff")} onChange={(value) => updateResponsiveProp("tabActiveColor", value)} />
             <ColorControl label="Active Background" value={String(deviceProps.tabActiveBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("tabActiveBackground", value)} />
+            {node.type === "tabs" ? (
+              <>
+                <RangeUnitControl label="Tab Gap" value={String(deviceProps.tabGap || "6px")} onChange={(value) => updateResponsiveProp("tabGap", value)} min={0} max={60} />
+                <SegmentedControl label="Alignment" value={String(deviceProps.tabAlignment || "left")} options={[{ label: "", value: "left", title: "Left", icon: "AlignLeft" }, { label: "", value: "center", title: "Center", icon: "AlignCenter" }, { label: "", value: "right", title: "Right", icon: "AlignRight" }]} onChange={(value) => updateResponsiveProp("tabAlignment", value)} />
+                <UnitControl label="Tab Radius" value={String(deviceProps.tabRadius || "6px")} onChange={(value) => updateResponsiveProp("tabRadius", value)} allowAuto={false} />
+                <UnitControl label="Tab Padding" value={String(deviceProps.tabPadding || "9px 14px")} onChange={(value) => updateResponsiveProp("tabPadding", value)} allowAuto={false} />
+                <ColorControl label="Content Text Color" value={String(deviceProps.tabContentColor || "#334155")} onChange={(value) => updateResponsiveProp("tabContentColor", value)} />
+                <ColorControl label="Content Background" value={String(deviceProps.tabContentBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("tabContentBackground", value)} />
+                <UnitControl label="Content Padding" value={String(deviceProps.tabContentPadding || "14px")} onChange={(value) => updateResponsiveProp("tabContentPadding", value)} allowAuto={false} />
+                <ColorControl label="Divider Color" value={String(deviceProps.tabDividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("tabDividerColor", value)} />
+                <UnitControl label="Icon Size" value={String(deviceProps.tabIconSize || "15px")} onChange={(value) => updateResponsiveProp("tabIconSize", value)} allowAuto={false} />
+                <ColorControl label="Icon Color" value={String(deviceProps.tabIconColor || "#334155")} onChange={(value) => updateResponsiveProp("tabIconColor", value)} />
+              </>
+            ) : null}
           </ControlGroup>
         ) : null}
         {(node.type === "posts" || node.type === "loop-grid" || node.type === "loop-carousel" || node.type === "post-tabs") ? (
@@ -8612,9 +8751,15 @@ export default function UniversalBuilder({ target }: Props) {
           <ControlGroup title="Accordion Styling" defaultOpen>
             <ColorControl label="Title Text Color" value={String(deviceProps.titleColor || "#0c2f55")} onChange={(value) => updateResponsiveProp("titleColor", value)} />
             <ColorControl label="Title Background" value={String(deviceProps.titleBackground || "#f8fafc")} onChange={(value) => updateResponsiveProp("titleBackground", value)} />
+            <UnitControl label="Header Padding" value={String(deviceProps.headerPadding || "12px 14px")} onChange={(value) => updateResponsiveProp("headerPadding", value)} allowAuto={false} />
             <ColorControl label="Content Text Color" value={String(deviceProps.contentColor || "#334155")} onChange={(value) => updateResponsiveProp("contentColor", value)} />
             <ColorControl label="Content Background" value={String(deviceProps.contentBackground || "#ffffff")} onChange={(value) => updateResponsiveProp("contentBackground", value)} />
+            <UnitControl label="Content Padding" value={String(deviceProps.contentPadding || "12px 14px")} onChange={(value) => updateResponsiveProp("contentPadding", value)} allowAuto={false} />
+            <RangeUnitControl label="Item Spacing" value={String(deviceProps.itemSpacing || "8px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} min={0} max={80} />
+            <UnitControl label="Item Radius" value={String(deviceProps.itemRadius || "6px")} onChange={(value) => updateResponsiveProp("itemRadius", value)} allowAuto={false} />
             <ColorControl label="Divider Color" value={String(deviceProps.dividerColor || "#e2e8f0")} onChange={(value) => updateResponsiveProp("dividerColor", value)} />
+            <UnitControl label="Item Icon Size" value={String(deviceProps.itemIconSize || "16px")} onChange={(value) => updateResponsiveProp("itemIconSize", value)} allowAuto={false} />
+            <ColorControl label="Item Icon Color" value={String(deviceProps.itemIconColor || "#3984e8")} onChange={(value) => updateResponsiveProp("itemIconColor", value)} />
           </ControlGroup>
         ) : null}
         {node.type === "countdown" ? (

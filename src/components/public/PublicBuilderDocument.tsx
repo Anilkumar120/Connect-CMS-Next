@@ -566,6 +566,14 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
       }
 
       if (node.type === "icon-list") {
+        if (Object.prototype.hasOwnProperty.call(responsivePropValues, "listAlignment")) {
+          const selectedAlignment = responsivePropValues.listAlignment;
+          const flexAlignment = selectedAlignment === "center" ? "center" : selectedAlignment === "right" ? "flex-end" : "flex-start";
+          const gridAlignment = selectedAlignment === "center" ? "center" : selectedAlignment === "right" ? "end" : "start";
+          add(root, "--builder-prop-list-align", flexAlignment);
+          add(root, "--builder-prop-list-justify", flexAlignment);
+          add(root, "--builder-prop-list-justify-items", gridAlignment);
+        }
         if (Object.prototype.hasOwnProperty.call(responsivePropValues, "layout")) {
           const selectedLayout = responsivePropValues.layout;
           if (selectedLayout === "grid") {
@@ -585,12 +593,19 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
         } else if (Object.prototype.hasOwnProperty.call(responsivePropValues, "columns") && widgetProps.layout === "grid") {
           add(root, "grid-template-columns", `repeat(${Number(widgetProps.columns || 2)}, minmax(0, 1fr))`);
         }
-        if (Object.prototype.hasOwnProperty.call(responsivePropValues, "divider")) {
-          const showDivider = Boolean(widgetProps.divider);
-          const dividerColor = cssValue(widgetProps.dividerColor) || "#e2e8f0";
+        if (
+          Object.prototype.hasOwnProperty.call(responsivePropValues, "divider") ||
+          Object.prototype.hasOwnProperty.call(responsivePropValues, "dividerColor")
+        ) {
+          const showDivider = Boolean(responsivePropValues.divider ?? widgetProps.divider);
+          const dividerColor = cssValue(responsivePropValues.dividerColor ?? widgetProps.dividerColor) || "#e2e8f0";
           add(root, "--builder-prop-divider-border", showDivider ? `1px solid ${dividerColor}` : "none");
           add(root, "--builder-prop-divider-padding", showDivider ? "8px" : "0px");
         }
+      }
+      if (node.type === "tabs" && Object.prototype.hasOwnProperty.call(responsivePropValues, "tabAlignment")) {
+        const selectedAlignment = responsivePropValues.tabAlignment;
+        add(root, "--builder-prop-tab-justify", selectedAlignment === "center" ? "center" : selectedAlignment === "right" ? "flex-end" : "flex-start");
       }
 
       const hidden =
@@ -781,6 +796,7 @@ export type PublicBuilderPostContext = {
   categories?: Array<{ name: string; slug: string }>;
 };
 
+// PUBLIC_LIST_LAYOUT_V6_2
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
@@ -1015,6 +1031,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const listLayout = stringProp("layout", "list");
     const listGap = styleProp("itemSpacing", stringProp("itemSpacing", "12px"));
     const listColumns = Math.max(1, Math.min(6, Number(props.columns || 2)));
+    const alignment = stringProp("listAlignment", "left");
+    const align = alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start";
     const listStyle: CSSProperties = {
       ...style,
       listStyle: "none",
@@ -1024,7 +1042,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
       flexDirection: `var(--builder-style-flex-direction, ${listLayout === "inline" ? "row" : "column"})` as CSSProperties["flexDirection"],
       flexWrap: `var(--builder-style-flex-wrap, ${listLayout === "inline" ? "wrap" : "nowrap"})` as CSSProperties["flexWrap"],
       gridTemplateColumns: `var(--builder-style-grid-template-columns, ${listLayout === "grid" ? `repeat(var(--builder-prop-columns, ${listColumns}), minmax(0, 1fr))` : "none"})`,
-      gap: `var(--builder-style-gap, ${listGap})`,
+      alignItems: listLayout === "inline" ? "center" : `var(--builder-prop-list-align, ${align})` as CSSProperties["alignItems"],
+      justifyContent: listLayout === "inline" ? `var(--builder-prop-list-justify, ${align})` as CSSProperties["justifyContent"] : "flex-start",
+      justifyItems: listLayout === "grid" ? `var(--builder-prop-list-justify-items, ${alignment === "center" ? "center" : alignment === "right" ? "end" : "start"})` : undefined,
+      gap: listGap,
     };
 
     return (
@@ -1036,18 +1057,14 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
           const Icon = iconName ? themeIcons[iconName] : null;
           const iconSrc = imageUrl(item.iconImage);
           const hasItemIcon = Boolean(iconSrc || Icon);
-          const responsiveIconSize = iconSizeCss;
           const iconColor = styleProp("iconColor", stringProp("iconColor", "#3984e8"));
+          const iconGap = styleProp("iconGap", stringProp("iconGap", "9px"));
           const itemText = String(item.text || item.label || `List item ${index + 1}`);
           const content = (
             <>
               {hasItemIcon ? (
-                <span style={{ display: "inline-flex", flex: "0 0 auto", color: iconColor }}>
-                  {iconSrc ? (
-                    <img src={iconSrc} alt="" style={{ width: responsiveIconSize, height: responsiveIconSize, objectFit: "contain" }} />
-                  ) : Icon ? (
-                    <Icon size={16} style={{ width: responsiveIconSize, height: responsiveIconSize, color: iconColor }} />
-                  ) : null}
+                <span style={{ display: "inline-flex", alignItems: "center", flex: "0 0 auto", color: iconColor }}>
+                  {iconSrc ? <img src={iconSrc} alt="" style={{ width: iconSizeCss, height: iconSizeCss, objectFit: "contain" }} /> : Icon ? <Icon size={16} style={{ width: iconSizeCss, height: iconSizeCss, color: iconColor }} /> : null}
                 </span>
               ) : null}
               <span>{itemText}</span>
@@ -1059,23 +1076,13 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
           const target = item.linkTarget === "_blank" ? "_blank" : undefined;
           const itemContent = isDynamic ? (
             <BuilderDynamicLink destination={dynamicDestination}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px"), color: styleProp("linkColor", "inherit"), textDecoration: "none" }}>
-                {content}
-              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: iconGap, color: styleProp("linkColor", "inherit"), textDecoration: "none" }}>{content}</span>
             </BuilderDynamicLink>
           ) : href && href !== "#" ? (
-            <a
-              href={href}
-              target={target}
-              rel={target ? "noopener noreferrer" : undefined}
-              style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px"), color: styleProp("linkColor", "inherit"), textDecoration: "none" }}
-            >
-              {content}
-            </a>
+            <a href={href} target={target} rel={target ? "noopener noreferrer" : undefined} style={{ display: "inline-flex", alignItems: "center", gap: iconGap, color: styleProp("linkColor", "inherit"), textDecoration: "none" }}>{content}</a>
           ) : (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: styleProp("iconGap", "9px") }}>{content}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: iconGap }}>{content}</span>
           );
-
           return (
             <li
               key={String(item.id || index)}
@@ -1083,10 +1090,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
                 display: "flex",
                 alignItems: "center",
                 minWidth: 0,
-                gap: styleProp("iconGap", "9px"),
+                gap: iconGap,
                 color: styleProp("textColor", "inherit"),
-                borderBottom: props.divider ? `1px solid ${styleProp("dividerColor", "#e2e8f0")}` : undefined,
-                paddingBottom: props.divider ? 8 : undefined,
+                borderBottom: `var(--builder-prop-divider-border, ${props.divider ? `1px solid ${styleProp("dividerColor", "#e2e8f0")}` : "none"})`,
+                paddingBottom: `var(--builder-prop-divider-padding, ${props.divider ? "8px" : "0px"})`,
               }}
             >
               {itemContent}
@@ -1095,8 +1102,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
         })}
       </ul>
     );
-  }
-  if (node.type === "image-box") {
+  }  if (node.type === "image-box") {
     const src = imageUrl(props.image);
     const position = stringProp("imagePosition", "top");
     const img = src ? (
@@ -1302,17 +1308,65 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
   }
   if (node.type === "accordion") {
     const items = Array.isArray(props.items) ? props.items : [];
-    return <div key={node.id} {...common}>{items.map((item, index) => {
-      if (!item || typeof item !== "object") return null;
-      const entry = item as Record<string, unknown>;
-      return <details key={String(entry.id || index)} open={Boolean(props.firstOpen) && index === 0} style={{ borderBottom: `1px solid ${styleProp("dividerColor", stringProp("dividerColor", "#e2e8f0"))}`, padding: "10px 0", background: styleProp("titleBackground", stringProp("titleBackground", "#f8fafc")) }}><summary style={{ cursor: "pointer", fontWeight: 600, color: styleProp("titleColor", stringProp("titleColor", "#0c2f55")) }}>{String(entry.title || `Item ${index + 1}`)}</summary><div style={{ padding: "10px 0", color: styleProp("contentColor", stringProp("contentColor", "#334155")), background: styleProp("contentBackground", stringProp("contentBackground", "#ffffff")) }}>{String(entry.content || "")}</div></details>;
-    })}</div>;
-  }
-  if (node.type === "tabs") {
+    const itemGap = styleProp("itemSpacing", stringProp("itemSpacing", "8px"));
+    const itemRadius = styleProp("itemRadius", stringProp("itemRadius", "6px"));
+    const headerPadding = styleProp("headerPadding", stringProp("headerPadding", "12px 14px"));
+    const contentPadding = styleProp("contentPadding", stringProp("contentPadding", "12px 14px"));
+    const dividerColor = styleProp("dividerColor", stringProp("dividerColor", "#e2e8f0"));
+    const itemIconSize = styleProp("itemIconSize", stringProp("itemIconSize", "16px"));
+    const itemIconColor = styleProp("itemIconColor", stringProp("itemIconColor", "#3984e8"));
+    return (
+      <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: "column", gap: itemGap, minWidth: 0 }}>
+        {items.map((raw, index) => {
+          if (!raw || typeof raw !== "object") return null;
+          const entry = raw as Record<string, unknown>;
+          const iconName = typeof entry.iconName === "string" ? entry.iconName : "";
+          const Icon = iconName ? themeIcons[iconName] : null;
+          const iconSrc = imageUrl(entry.iconImage);
+          return (
+            <details key={String(entry.id || index)} open={Boolean(props.firstOpen) && index === 0} style={{ border: `1px solid ${dividerColor}`, borderRadius: itemRadius, overflow: "hidden", background: styleProp("titleBackground", stringProp("titleBackground", "#f8fafc")) }}>
+              <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: headerPadding, cursor: "pointer", listStyle: "none", fontWeight: 600, color: styleProp("titleColor", stringProp("titleColor", "#0c2f55")) }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  {iconSrc ? <img src={iconSrc} alt="" style={{ width: itemIconSize, height: itemIconSize, objectFit: "contain" }} /> : Icon ? <Icon size={16} style={{ width: itemIconSize, height: itemIconSize, color: itemIconColor, flex: "0 0 auto" }} /> : null}
+                  <span>{String(entry.title || `Item ${index + 1}`)}</span>
+                </span>
+                <span aria-hidden="true" style={{ flex: "0 0 auto", fontSize: 18, lineHeight: 1 }}>âŒ„</span>
+              </summary>
+              <div style={{ padding: contentPadding, color: styleProp("contentColor", stringProp("contentColor", "#334155")), background: styleProp("contentBackground", stringProp("contentBackground", "#ffffff")), borderTop: `1px solid ${dividerColor}` }}>{String(entry.content || "")}</div>
+            </details>
+          );
+        })}
+      </div>
+    );
+  }  if (node.type === "tabs") {
     const items = Array.isArray(props.tabs) ? props.tabs : [];
-    return <div key={node.id} {...common}><PublicBuilderTabs items={items as Array<{id?: string; title?: string; content?: string}>} style={{ width: "100%", minWidth: 0 }} normalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))} normalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))} activeColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))} activeBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))} hoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))} hoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))} /></div>;
-  }
-  if (node.type === "toggle") return <details key={node.id} {...common} open={Boolean(props.open)}><summary>{stringProp("title", "Toggle")}</summary><div>{stringProp("content")}</div></details>;
+    const tabAlignment = stringProp("tabAlignment", "left");
+    const tabJustify = tabAlignment === "center" ? "center" : tabAlignment === "right" ? "flex-end" : "flex-start";
+    return (
+      <div key={node.id} {...common}>
+        <PublicBuilderTabs
+          items={items as Array<{ id?: string; title?: string; content?: string; iconName?: string; iconImage?: string }>}
+          style={{ width: "100%", minWidth: 0 }}
+          normalColor={styleProp("tabNormalColor", stringProp("tabNormalColor", "#334155"))}
+          normalBackground={styleProp("tabNormalBackground", stringProp("tabNormalBackground", "#f1f5f9"))}
+          hoverColor={styleProp("tabHoverColor", stringProp("tabHoverColor", "#0c2f55"))}
+          hoverBackground={styleProp("tabHoverBackground", stringProp("tabHoverBackground", "#e2e8f0"))}
+          activeColor={styleProp("tabActiveColor", stringProp("tabActiveColor", "#ffffff"))}
+          activeBackground={styleProp("tabActiveBackground", stringProp("tabActiveBackground", "#0c2f55"))}
+          gap={styleProp("tabGap", stringProp("tabGap", "6px"))}
+          alignment={styleProp("tab-justify", tabJustify)}
+          radius={styleProp("tabRadius", stringProp("tabRadius", "6px"))}
+          tabPadding={styleProp("tabPadding", stringProp("tabPadding", "9px 14px"))}
+          contentColor={styleProp("tabContentColor", stringProp("tabContentColor", "#334155"))}
+          contentBackground={styleProp("tabContentBackground", stringProp("tabContentBackground", "#ffffff"))}
+          contentPadding={styleProp("tabContentPadding", stringProp("tabContentPadding", "14px"))}
+          dividerColor={styleProp("tabDividerColor", stringProp("tabDividerColor", "#e2e8f0"))}
+          iconSize={styleProp("tabIconSize", stringProp("tabIconSize", "15px"))}
+          iconColor={styleProp("tabIconColor", stringProp("tabIconColor", "#334155"))}
+        />
+      </div>
+    );
+  }  if (node.type === "toggle") return <details key={node.id} {...common} open={Boolean(props.open)}><summary>{stringProp("title", "Toggle")}</summary><div>{stringProp("content")}</div></details>;
   if (node.type === "counter") return <div key={node.id} {...common}><strong>{stringProp("prefix")}{String(props.end ?? 0)}{stringProp("suffix")}</strong><div>{stringProp("title")}</div></div>;
   if (node.type === "progress") {
     const percent = Math.max(0, Math.min(100, Number(props.percentage || 0)));
@@ -1412,8 +1466,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const sizeCss = styleProp("iconSize", cssLength(props.iconSize, "22px"));
     const buttonSizeCss = styleProp("buttonSize", cssLength(props.buttonSize, "40px"));
     const shape = stringProp("shape", "circle");
-    const radius = shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px";
-    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: style.gap || cssLength(props.gap, "12px") }}>{icons.map((icon, index) => {
+    const radius = styleProp("shapeRadius", shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: styleProp("gap", stringProp("gap", "12px")) }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;
       const name = String(entry.iconName || entry.name || "");
