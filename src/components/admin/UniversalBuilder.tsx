@@ -2099,6 +2099,7 @@ function ControlGroup({
 // BUILDER_ICON_SOCIAL_GAP_V6_4
 // BUILDER_GAP_CONFLICT_FIX_V7
 // BUILDER_GAP_DISPLAY_CONFLICT_V7_2
+// BUILDER_SOCIAL_ICONS_LAYOUT_BRANDS_V8
 function PreviewNode({
   node,
   device,
@@ -2467,10 +2468,11 @@ function PreviewNode({
     const iconSizeCss = cssLength(props.iconSize, "22px");
     const buttonSizeCss = cssLength(props.buttonSize, "40px");
     const shape = String(props.shape || "circle");
+    const layoutMode = String(props.layoutMode || "inline");
     const iconGap = cssLength(props.iconGap ?? props.gap ?? inlineStyle.gap, "12px");
     const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap",
+      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: layoutMode === "block" ? "column" : "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: layoutMode === "block" ? "nowrap" : "wrap",
           gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
@@ -8677,6 +8679,15 @@ export default function UniversalBuilder({ target }: Props) {
                 <ColorControl label="Icon Background" value={String(deviceProps.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} />
                 <UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} />
                 <UnitControl label="Icon Gap" value={String(deviceProps.iconGap ?? deviceProps.gap ?? "12px")} onChange={(value) => updateResponsiveProp("iconGap", value)} allowAuto={false} />
+                <SelectControl
+                  label="Layout"
+                  value={String(deviceProps.layoutMode || "inline")}
+                  options={[
+                    { label: "Inline", value: "inline" },
+                    { label: "Block", value: "block" },
+                  ]}
+                  onChange={(value) => updateResponsiveProp("layoutMode", value)}
+                />
 
 
                 <UnitControl label="Shape Radius" value={String(deviceProps.shapeRadius || (deviceProps.shape === "square" ? "4px" : deviceProps.shape === "rounded" ? "10px" : "999px"))} onChange={(value) => updateResponsiveProp("shapeRadius", value)} allowAuto={false} />
@@ -10659,6 +10670,7 @@ export default function UniversalBuilder({ target }: Props) {
         {iconPickerTarget ? (
           <IconPicker
             value={iconPickerTarget.value}
+            initialTab={iconPickerTarget.kind === "repeaterItem" && iconPickerTarget.key === "icons" ? "social" : "all"}
             onClose={() => setIconPickerTarget(null)}
             onSelect={(iconName) => {
               const removingIcon = iconName === "";

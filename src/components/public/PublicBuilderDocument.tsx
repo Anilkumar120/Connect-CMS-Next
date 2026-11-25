@@ -564,6 +564,11 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
         const selectedShape = responsivePropValues.shape;
         add(root, "--builder-prop-shape-radius", selectedShape === "square" ? "4px" : selectedShape === "rounded" ? "10px" : "999px");
       }
+      if (node.type === "social-icons" && Object.prototype.hasOwnProperty.call(responsivePropValues, "layoutMode")) {
+        const selectedLayoutMode = responsivePropValues.layoutMode;
+        add(root, "--builder-prop-social-layout-direction", selectedLayoutMode === "block" ? "column" : "row");
+        add(root, "--builder-prop-social-layout-wrap", selectedLayoutMode === "block" ? "nowrap" : "wrap");
+      }
 
       if (node.type === "icon-list") {
         if (Object.prototype.hasOwnProperty.call(responsivePropValues, "listAlignment")) {
@@ -800,6 +805,7 @@ export type PublicBuilderPostContext = {
 // PUBLIC_ICON_SOCIAL_GAP_V6_4
 // PUBLIC_GAP_CONFLICT_FIX_V7
 // PUBLIC_GAP_DISPLAY_CONFLICT_V7_2
+// PUBLIC_SOCIAL_ICONS_LAYOUT_BRANDS_V8
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
@@ -1471,9 +1477,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const sizeCss = styleProp("iconSize", cssLength(props.iconSize, "22px"));
     const buttonSizeCss = styleProp("buttonSize", cssLength(props.buttonSize, "40px"));
     const shape = stringProp("shape", "circle");
+    const layoutMode = stringProp("layoutMode", "inline");
     const iconGap = styleProp("iconGap", stringProp("iconGap", styleProp("gap", stringProp("gap", "12px"))));
     const radius = styleProp("shapeRadius", shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap",
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: styleProp("social-layout-direction", layoutMode === "block" ? "column" : "row") as CSSProperties["flexDirection"], alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: styleProp("social-layout-wrap", layoutMode === "block" ? "nowrap" : "wrap") as CSSProperties["flexWrap"],
       gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;

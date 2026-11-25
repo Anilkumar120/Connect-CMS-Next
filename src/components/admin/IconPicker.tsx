@@ -9,41 +9,82 @@ import {
 } from "@/components/public/theme-icons";
 import styles from "./IconPicker.module.css";
 
-type IconTab = "all" | "lucide" | "brand";
+type IconTab = "all" | "social" | "brand" | "lucide";
 
 type Props = {
   value: string;
   onSelect: (name: string) => void;
   onClose: () => void;
+  initialTab?: IconTab;
 };
 
 const PAGE_SIZE = 180;
 
-export default function IconPicker({ value, onSelect, onClose }: Props) {
+function nameExact(name: string, search: string): boolean {
+  return name.toLowerCase() === search;
+}
+
+// Canonical registry aliases; these are surfaced before the full brand catalog.
+const POPULAR_SOCIAL_ICON_KEYS = [
+  "LinkedIn", "XBrand", "Twitter", "Instagram", "Facebook", "YouTube",
+  "TikTok", "WhatsApp", "Telegram", "Pinterest", "Snapchat", "Reddit",
+  "Discord", "Twitch", "Threads", "Spotify", "GitHub", "GitLab", "Mastodon",
+  "Bluesky", "WeChat", "Weibo", "LINE", "Slack", "Medium", "Behance",
+  "Dribbble", "Vimeo", "SoundCloud", "Tumblr",
+] as const;
+
+// ICON_PICKER_POPULAR_SOCIAL_V8
+export default function IconPicker({ value, onSelect, onClose, initialTab = "all" }: Props) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<IconTab>("all");
+  const [tab, setTab] = useState<IconTab>(initialTab);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const icons = useMemo(() => {
     const search = query.trim().toLowerCase();
+    const popularRank = new Map<string, number>(
+      POPULAR_SOCIAL_ICON_KEYS.map((name, index) => [name, index] as const),
+    );
 
-    return Object.keys(themeIcons)
-      .filter((name) => {
-        const category = themeIconCategories[name] || "lucide";
-        if (tab !== "all" && category !== tab) return false;
+    const matches = Object.keys(themeIcons).filter((name) => {
+      const category = themeIconCategories[name] || "lucide";
+      const label = themeIconLabels[name] || name;
+      if (tab === "lucide" && category !== "lucide") return false;
+      if (tab === "brand" && category !== "brand") return false;
+      if (tab === "social" && (category !== "brand" || !popularRank.has(name))) return false;
+      return (
+        !search ||
+        name.toLowerCase().includes(search) ||
+        label.toLowerCase().includes(search)
+      );
+    });
 
-        const label = themeIconLabels[name] || name;
-        return (
-          !search ||
-          name.toLowerCase().includes(search) ||
-          label.toLowerCase().includes(search)
-        );
-      })
-      .sort((a, b) => {
-        const labelA = themeIconLabels[a] || a;
-        const labelB = themeIconLabels[b] || b;
-        return labelA.localeCompare(labelB);
-      });
+    matches.sort((a, b) => {
+      const labelA = themeIconLabels[a] || a;
+      const labelB = themeIconLabels[b] || b;
+      if (search) {
+        const exactA = labelA.toLowerCase() === search ? 0 : nameExact(a, search) ? 1 : 2;
+        const exactB = labelB.toLowerCase() === search ? 0 : nameExact(b, search) ? 1 : 2;
+        if (exactA !== exactB) return exactA - exactB;
+      }
+      const rankA = popularRank.has(a) ? popularRank.get(a)! : Number.MAX_SAFE_INTEGER;
+      const rankB = popularRank.has(b) ? popularRank.get(b)! : Number.MAX_SAFE_INTEGER;
+      if (rankA !== rankB) return rankA - rankB;
+      const aliasA = /^Si[A-Z]/.test(a) ? 1 : 0;
+      const aliasB = /^Si[A-Z]/.test(b) ? 1 : 0;
+      if (aliasA !== aliasB) return aliasA - aliasB;
+      return labelA.localeCompare(labelB);
+    });
+
+    // Simple Icons expose both Si* keys and friendly aliases. Keep one tile per
+    // actual brand component so the picker has no duplicate logos.
+    const seenBrandComponents = new Set<unknown>();
+    return matches.filter((name) => {
+      if ((themeIconCategories[name] || "lucide") !== "brand") return true;
+      const component = themeIcons[name];
+      if (seenBrandComponents.has(component)) return false;
+      seenBrandComponents.add(component);
+      return true;
+    });
   }, [query, tab]);
 
   useEffect(() => {
@@ -89,8 +130,9 @@ export default function IconPicker({ value, onSelect, onClose }: Props) {
         <div className={styles.tabs} role="tablist" aria-label="Icon categories">
           {([
             ["all", "All Icons"],
+            ["social", "Popular Social"],
+            ["brand", "All Brands"],
             ["lucide", "Interface Icons"],
-            ["brand", "Social & Brand"],
           ] as const).map(([key, label]) => (
             <button
               key={key}
