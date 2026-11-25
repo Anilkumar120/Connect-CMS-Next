@@ -613,6 +613,18 @@ function responsiveCss(nodes: BuilderNode[], documentSelector: string): string {
         add(root, "--builder-prop-tab-justify", selectedAlignment === "center" ? "center" : selectedAlignment === "right" ? "flex-end" : "flex-start");
       }
 
+      if (node.type === "social-icons") {
+        const selectedAlignment = String(widgetProps.alignment || "inherit");
+        const selectedLayoutMode = String(widgetProps.layoutMode || "inline");
+        const isInherited = selectedAlignment === "inherit";
+        const isBlock = selectedLayoutMode === "block";
+        const flexAlignment = selectedAlignment === "center" ? "center"
+          : selectedAlignment === "right" ? "flex-end"
+          : "flex-start";
+        add(root, "--builder-prop-social-justify", !isInherited && !isBlock ? flexAlignment : "flex-start");
+        add(root, "--builder-prop-social-align-items", isInherited ? (isBlock ? "flex-start" : "center") : isBlock ? flexAlignment : "center");
+        add(root, "--builder-prop-social-width", isInherited ? "var(--builder-style-width, auto)" : "var(--builder-style-width, 100%)");
+      }
       const hidden =
         (device === "desktop" && node.advanced?.hideOnDesktop) ||
         (device === "tablet" && node.advanced?.hideOnTablet) ||
@@ -806,6 +818,7 @@ export type PublicBuilderPostContext = {
 // PUBLIC_GAP_CONFLICT_FIX_V7
 // PUBLIC_GAP_DISPLAY_CONFLICT_V7_2
 // PUBLIC_SOCIAL_ICONS_LAYOUT_BRANDS_V8
+// PUBLIC_SOCIAL_ALIGNMENT_CONTAINER_V11
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
@@ -1480,7 +1493,8 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const layoutMode = stringProp("layoutMode", "inline");
     const iconGap = styleProp("iconGap", stringProp("iconGap", styleProp("gap", stringProp("gap", "12px"))));
     const radius = styleProp("shapeRadius", shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
-    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: styleProp("social-layout-direction", layoutMode === "block" ? "column" : "row") as CSSProperties["flexDirection"], alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: styleProp("social-layout-wrap", layoutMode === "block" ? "nowrap" : "wrap") as CSSProperties["flexWrap"],
+    return <div key={node.id} {...common} style={{ ...style, display: "flex", flexDirection: styleProp("social-layout-direction", layoutMode === "block" ? "column" : "row") as CSSProperties["flexDirection"], alignItems: styleProp("social-align-items", layoutMode === "block" ? "flex-start" : "center") as CSSProperties["alignItems"], justifyContent: styleProp("social-justify", "flex-start") as CSSProperties["justifyContent"],
+      width: styleProp("social-width", "var(--builder-style-width, auto)") as CSSProperties["width"], flexWrap: styleProp("social-layout-wrap", layoutMode === "block" ? "nowrap" : "wrap") as CSSProperties["flexWrap"],
       gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;

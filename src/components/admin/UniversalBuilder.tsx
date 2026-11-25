@@ -2100,6 +2100,7 @@ function ControlGroup({
 // BUILDER_GAP_CONFLICT_FIX_V7
 // BUILDER_GAP_DISPLAY_CONFLICT_V7_2
 // BUILDER_SOCIAL_ICONS_LAYOUT_BRANDS_V8
+// BUILDER_SOCIAL_ALIGNMENT_CONTAINER_V11
 function PreviewNode({
   node,
   device,
@@ -2469,10 +2470,12 @@ function PreviewNode({
     const buttonSizeCss = cssLength(props.buttonSize, "40px");
     const shape = String(props.shape || "circle");
     const layoutMode = String(props.layoutMode || "inline");
+    const alignment = String(props.alignment || "inherit");
     const iconGap = cssLength(props.iconGap ?? props.gap ?? inlineStyle.gap, "12px");
     const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: layoutMode === "block" ? "column" : "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: layoutMode === "block" ? "nowrap" : "wrap",
+      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: layoutMode === "block" ? "column" : "row", alignItems: alignment === "inherit" ? (layoutMode === "block" ? (inlineStyle.alignItems || "flex-start") : (inlineStyle.alignItems || "center")) : layoutMode === "block" ? (alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start") : (inlineStyle.alignItems || "center"), justifyContent: layoutMode === "block" ? "flex-start" : alignment === "inherit" ? (inlineStyle.justifyContent || "flex-start") : alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start",
+        width: alignment === "inherit" ? inlineStyle.width : inlineStyle.width || "100%", flexWrap: layoutMode === "block" ? "nowrap" : "wrap",
           gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
@@ -8688,6 +8691,17 @@ export default function UniversalBuilder({ target }: Props) {
                   ]}
                   onChange={(value) => updateResponsiveProp("layoutMode", value)}
                 />
+                  <SelectControl
+                    label="Alignment"
+                    value={String(deviceProps.alignment || "inherit")}
+                    options={[
+                      { label: "Default (Container)", value: "inherit" },
+                      { label: "Left", value: "left" },
+                      { label: "Center", value: "center" },
+                      { label: "Right", value: "right" },
+                    ]}
+                    onChange={(value) => updateResponsiveProp("alignment", value)}
+                  />
 
 
                 <UnitControl label="Shape Radius" value={String(deviceProps.shapeRadius || (deviceProps.shape === "square" ? "4px" : deviceProps.shape === "rounded" ? "10px" : "999px"))} onChange={(value) => updateResponsiveProp("shapeRadius", value)} allowAuto={false} />
