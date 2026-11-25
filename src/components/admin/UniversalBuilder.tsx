@@ -2097,6 +2097,7 @@ function ControlGroup({
 
 // BUILDER_LIST_LAYOUT_V6_2
 // BUILDER_ICON_SOCIAL_GAP_V6_4
+// BUILDER_GAP_CONFLICT_FIX_V7
 function PreviewNode({
   node,
   device,
@@ -2388,10 +2389,10 @@ function PreviewNode({
     const listColumns = Math.max(1, Math.min(6, Number(props.columns) || 2));
     const iconSizeCss = cssLength(props.iconSize, "16px");
     const itemGap = cssLength(props.iconGap, "9px");
-    const itemSpacing = cssLength(props.itemSpacing, "12px");
+    const itemSpacing = cssLength(props.itemSpacing ?? props.gap, "12px");
+    const display = listLayout === "grid" ? "grid" : "flex";
     const listAlignment = String(props.listAlignment || "left");
     const listAlignValue = listAlignment === "center" ? "center" : listAlignment === "right" ? "flex-end" : "flex-start";
-    const display = listLayout === "grid" ? "grid" : "flex";
 
     return (
       <ul
@@ -2465,10 +2466,11 @@ function PreviewNode({
     const iconSizeCss = cssLength(props.iconSize, "22px");
     const buttonSizeCss = cssLength(props.buttonSize, "40px");
     const shape = String(props.shape || "circle");
-    const iconGap = cssLength(props.gap, "12px");
+    const iconGap = cssLength(props.iconGap ?? props.gap ?? inlineStyle.gap, "12px");
     const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap", gap: iconGap, rowGap: iconGap, columnGap: iconGap }}>
+      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap",
+          gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
           const SocialIcon = name ? themeIcons[name] : null;
@@ -8673,7 +8675,9 @@ export default function UniversalBuilder({ target }: Props) {
               <>
                 <ColorControl label="Icon Background" value={String(deviceProps.iconBackground || "#0c2f55")} onChange={(value) => updateResponsiveProp("iconBackground", value)} />
                 <UnitControl label="Button Size" value={String(deviceProps.buttonSize || "40px")} onChange={(value) => updateResponsiveProp("buttonSize", value)} allowAuto={false} />
-                <RangeUnitControl label="Icon Gap" value={String(deviceProps.gap || "12px")} onChange={(value) => updateResponsiveProp("gap", value)} min={0} max={80} />
+                <UnitControl label="Icon Gap" value={String(deviceProps.iconGap ?? deviceProps.gap ?? "12px")} onChange={(value) => updateResponsiveProp("iconGap", value)} allowAuto={false} />
+
+
                 <UnitControl label="Shape Radius" value={String(deviceProps.shapeRadius || (deviceProps.shape === "square" ? "4px" : deviceProps.shape === "rounded" ? "10px" : "999px"))} onChange={(value) => updateResponsiveProp("shapeRadius", value)} allowAuto={false} />
               </>
             ) : null}
@@ -8682,7 +8686,8 @@ export default function UniversalBuilder({ target }: Props) {
         {node.type === "icon-list" ? (
           <>
             <ControlGroup title="List" defaultOpen>
-              <RangeUnitControl label="Space Between" value={String(deviceProps.itemSpacing || "12px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} min={0} max={80} />
+              <UnitControl label="Space Between" value={String(deviceProps.itemSpacing ?? deviceProps.gap ?? "12px")} onChange={(value) => updateResponsiveProp("itemSpacing", value)} allowAuto={false} />
+
               <SegmentedControl
                 label="Alignment"
                 value={String(deviceProps.listAlignment || "left")}

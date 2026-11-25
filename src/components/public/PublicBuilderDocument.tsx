@@ -798,6 +798,7 @@ export type PublicBuilderPostContext = {
 
 // PUBLIC_LIST_LAYOUT_V6_2
 // PUBLIC_ICON_SOCIAL_GAP_V6_4
+// PUBLIC_GAP_CONFLICT_FIX_V7
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
@@ -1030,7 +1031,7 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const items = Array.isArray(props.items) ? props.items : [];
     const iconSizeCss = styleProp("iconSize", cssLength(props.iconSize, "16px"));
     const listLayout = stringProp("layout", "list");
-    const listGap = styleProp("itemSpacing", stringProp("itemSpacing", "12px"));
+    const listGap = styleProp("itemSpacing", stringProp("itemSpacing", styleProp("gap", stringProp("gap", "12px"))));
     const listColumns = Math.max(1, Math.min(6, Number(props.columns || 2)));
     const alignment = stringProp("listAlignment", "left");
     const align = alignment === "center" ? "center" : alignment === "right" ? "flex-end" : "flex-start";
@@ -1469,9 +1470,10 @@ function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, p
     const sizeCss = styleProp("iconSize", cssLength(props.iconSize, "22px"));
     const buttonSizeCss = styleProp("buttonSize", cssLength(props.buttonSize, "40px"));
     const shape = stringProp("shape", "circle");
-    const iconGap = styleProp("gap", stringProp("gap", "12px"));
+    const iconGap = styleProp("iconGap", stringProp("iconGap", styleProp("gap", stringProp("gap", "12px"))));
     const radius = styleProp("shapeRadius", shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
-    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap", gap: iconGap, rowGap: iconGap, columnGap: iconGap }}>{icons.map((icon, index) => {
+    return <div key={node.id} {...common} style={{ ...style, display: style.display || "flex", flexDirection: style.flexDirection || "row", alignItems: style.alignItems || "center", justifyContent: style.justifyContent || "flex-start", flexWrap: style.flexWrap || "wrap",
+      gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>{icons.map((icon, index) => {
       if (!icon || typeof icon !== "object") return null;
       const entry = icon as Record<string, unknown>;
       const name = String(entry.iconName || entry.name || "");
