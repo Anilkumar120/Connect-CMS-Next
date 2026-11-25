@@ -805,6 +805,12 @@ export type PublicBuilderPostContext = {
   id: string;
   title: string;
   slug: string;
+  kind?: "page" | "post";
+  url?: string;
+  description?: string | null;
+  authorName?: string | null;
+  authorBio?: string | null;
+  customFields?: Record<string, unknown>;
   postTypeId?: string | null;
   excerpt?: string | null;
   contentHtml?: string;
@@ -813,16 +819,53 @@ export type PublicBuilderPostContext = {
   categories?: Array<{ name: string; slug: string }>;
 };
 
+function resolveDynamicProps(
+  node: BuilderNode,
+  context?: PublicBuilderPostContext,
+): Record<string, unknown> {
+  const resolved = { ...node.props };
+  if (!context || !node.dynamicBindings) return resolved;
+
+  for (const [property, binding] of Object.entries(node.dynamicBindings)) {
+    if (!binding || typeof binding.source !== "string") continue;
+    let value: unknown;
+
+    switch (binding.source) {
+      case "current.title": value = context.title; break;
+      case "current.slug": value = context.slug; break;
+      case "current.url": value = context.url; break;
+      case "current.description": value = context.description; break;
+      case "current.excerpt": value = context.excerpt; break;
+      case "current.content": value = context.contentHtml; break;
+      case "current.featuredImage": value = context.featuredImage; break;
+      case "current.publishedAt": value = context.publishedAt instanceof Date ? context.publishedAt.toISOString() : context.publishedAt; break;
+      case "current.authorName": value = context.authorName; break;
+      case "current.authorBio": value = context.authorBio; break;
+      case "current.categories": value = context.categories?.map((item) => item.name).filter(Boolean).join(", "); break;
+      case "custom.field": value = binding.fieldName ? context.customFields?.[binding.fieldName] : undefined; break;
+      default: value = undefined;
+    }
+
+    if (value !== undefined && value !== null && value !== "") {
+      resolved[property] = value;
+    } else if (typeof binding.fallback === "string" && binding.fallback.length > 0) {
+      resolved[property] = binding.fallback;
+    }
+  }
+
+  return resolved;
+}
 // PUBLIC_LIST_LAYOUT_V6_2
 // PUBLIC_ICON_SOCIAL_GAP_V6_4
 // PUBLIC_GAP_CONFLICT_FIX_V7
 // PUBLIC_GAP_DISPLAY_CONFLICT_V7_2
 // PUBLIC_SOCIAL_ICONS_LAYOUT_BRANDS_V8
 // PUBLIC_SOCIAL_ALIGNMENT_CONTAINER_V11
+// CONNECT_BUILDER_DYNAMIC_BINDINGS_V1
 function renderNode(node: BuilderNode, postContext?: PublicBuilderPostContext, postUrlPrefix = "/blog"): ReactNode {
   if (!node.enabled || node.advanced?.displayCondition === "hidden") return null;
 
-  const props = node.props;
+  const props = resolveDynamicProps(node, postContext);
   const style = nodeStyle(node);
   const children = node.children ?? [];
   const className = node.advanced?.cssClasses;

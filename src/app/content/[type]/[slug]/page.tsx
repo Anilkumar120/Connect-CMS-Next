@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { notFound, redirect, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -82,12 +82,39 @@ async function CustomContentPage({ type, slug }: { type: string; slug: string })
         modifiedAt={post.updatedAt}
       />
       <main className="custom-content-page">
-        <article className="custom-content-article">
-          {post.featuredImage && <img className="custom-content-featured" src={post.featuredImage} alt={post.title} />}
-          <p className="custom-content-type">{post.postType?.title ?? type}</p>
-          <h1>{post.title}</h1>
-          {excerpt && <p className="custom-content-excerpt">{excerpt}</p>}
-          {universalBuilderDocument?.layout.root.length ? <PublicBuilderDocument layout={universalBuilderDocument.layout} globalStyles={universalBuilderDocument.globalStyles} /> : hasBuilderContent && builderLayout ? <PublicPageBuilder layout={builderLayout} /> : <div className="custom-content-body" dangerouslySetInnerHTML={{ __html: html }} />}
+        <article
+          className="custom-content-article"
+          style={universalBuilderDocument?.layout.root.length ? { maxWidth: "none", padding: 0 } : undefined}
+        >
+          {!universalBuilderDocument?.layout.root.length && post.featuredImage && <img className="custom-content-featured" src={post.featuredImage} alt={post.title} />}
+          {!universalBuilderDocument?.layout.root.length && <p className="custom-content-type">{post.postType?.title ?? type}</p>}
+          {!universalBuilderDocument?.layout.root.length && <h1>{post.title}</h1>}
+          {!universalBuilderDocument?.layout.root.length && excerpt && <p className="custom-content-excerpt">{excerpt}</p>}
+          {universalBuilderDocument?.layout.root.length ? (
+            <PublicBuilderDocument
+              layout={universalBuilderDocument.layout}
+              globalStyles={universalBuilderDocument.globalStyles}
+              postContext={{
+                id: post.id,
+                kind: "post",
+                postTypeId: post.postTypeId,
+                title: post.title,
+                slug: post.slug,
+                url: `/content/${type}/${slug}/`,
+                description: excerpt,
+                excerpt,
+                contentHtml: html,
+                featuredImage: post.featuredImage,
+                publishedAt: post.publishedAt,
+                categories: post.categories.map(({ category }) => ({ name: category.name, slug: category.slug })),
+              }}
+            />
+          ) : hasBuilderContent && builderLayout ? (
+            <PublicPageBuilder layout={builderLayout} />
+          ) : (
+            <div className="custom-content-body" dangerouslySetInnerHTML={{ __html: html }} />
+          )}
+          {/* CONNECT_BUILDER_DYNAMIC_BINDINGS_V1 */}
           {(post.categories.length > 0 || post.tags.length > 0) && <footer className="custom-content-taxonomies">
             {post.categories.map(({ category }) => <span key={category.slug}>{category.name}</span>)}
             {post.tags.map(({ tag }) => <span key={tag.slug}>#{tag.name}</span>)}

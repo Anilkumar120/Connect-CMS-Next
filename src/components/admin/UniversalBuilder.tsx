@@ -111,6 +111,7 @@ import type {
   BuilderTypography,
   BuilderBorder,
   BuilderStyle,
+  BuilderDynamicBinding,
 } from "@/lib/builder/types";
 
 import {
@@ -364,6 +365,7 @@ function cloneNode(node: BuilderNode): BuilderNode {
     props: structuredClone(node.props || {}),
     styles: structuredClone(node.styles || {}),
     advanced: node.advanced ? structuredClone(node.advanced) : undefined,
+    dynamicBindings: node.dynamicBindings ? structuredClone(node.dynamicBindings) : undefined,
     children: (node.children || []).map(cloneNode),
   };
 }
@@ -4084,7 +4086,7 @@ export default function UniversalBuilder({ target }: Props) {
   );
 
   const [inspectorTab, setInspectorTab] = useState<
-    "content" | "layout" | "style" | "advanced"
+    "content" | "layout" | "style" | "advanced" | "dynamic"
   >("content");
   const [imageOpacityState, setImageOpacityState] = useState<"normal" | "hover">("normal");
   const [backgroundState, setBackgroundState] = useState<"normal" | "hover">("normal");
@@ -5416,6 +5418,25 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  const updateDynamicBinding = (
+    property: string,
+    binding: BuilderDynamicBinding | undefined,
+  ) => {
+    if (!selectedId) return;
+
+    commitRoot(
+      updateTree(layout.root, selectedId, (node) => {
+        const nextBindings = { ...(node.dynamicBindings || {}) };
+        if (binding) nextBindings[property] = binding;
+        else delete nextBindings[property];
+        return {
+          ...node,
+          dynamicBindings: Object.keys(nextBindings).length ? nextBindings : undefined,
+        };
+      }),
+    );
+  };
+
   const openMediaLibrary = async (
     mediaType: MediaTarget = "widget",
     itemIndex: number | null = null,
@@ -5967,8 +5988,8 @@ export default function UniversalBuilder({ target }: Props) {
   };
 
   const inspectorTabs = isLayoutNode
-    ? (["layout", "content", "style", "advanced"] as const)
-    : (["content", "style", "advanced"] as const);
+    ? (["layout", "content", "style", "advanced", "dynamic"] as const)
+    : (["content", "style", "advanced", "dynamic"] as const);
 
   const selectedPadding = getResponsiveValue(selectedNode?.styles.padding, device);
   const selectedMargin = getResponsiveValue(selectedNode?.styles.margin, device);
@@ -9771,6 +9792,106 @@ export default function UniversalBuilder({ target }: Props) {
     );
   };
 
+  const renderDynamicPanel = () => {
+    if (!selectedNode) return null;
+
+    const node = selectedNode;
+    const candidates = [
+      { key: "text", label: "Text" },
+      { key: "content", label: "Content" },
+      { key: "html", label: "HTML" },
+      { key: "title", label: "Title" },
+      { key: "description", label: "Description" },
+      { key: "excerpt", label: "Excerpt" },
+      { key: "src", label: "Image / Media URL" },
+      { key: "image", label: "Image URL" },
+      { key: "alt", label: "Image Alt Text" },
+      { key: "url", label: "Button / Link URL" },
+      { key: "link", label: "Link URL" },
+      { key: "caption", label: "Caption" },
+    ].filter((field) => Object.prototype.hasOwnProperty.call(node.props, field.key));
+
+    const sourceOptions = [
+      { label: "No dynamic source", value: "none" },
+      { label: "Current Content — Title", value: "current.title" },
+      { label: "Current Content — Slug", value: "current.slug" },
+      { label: "Current Content — URL", value: "current.url" },
+      { label: "Current Content — Description", value: "current.description" },
+      { label: "Current Content — Excerpt", value: "current.excerpt" },
+      { label: "Current Content — Main Content", value: "current.content" },
+      { label: "Current Content — Featured Image", value: "current.featuredImage" },
+      { label: "Current Content — Publish Date", value: "current.publishedAt" },
+      { label: "Current Content — Author Name", value: "current.authorName" },
+      { label: "Current Content — Author Bio", value: "current.authorBio" },
+      { label: "Current Content — Categories", value: "current.categories" },
+      { label: "Custom Field", value: "custom.field" },
+    ];
+
+    return (
+      <>
+        <ControlGroup title="Dynamic Content" defaultOpen>
+          <p className={styles.mutedText}>
+            Bind supported widget fields to the page or post being displayed. Static values stay saved and are used when a source is unavailable.
+          </p>
+          {candidates.length ? candidates.map((field) => {
+            const binding = node.dynamicBindings?.[field.key];
+            const selectedSource = binding?.source || "none";
+            return (
+              <ControlGroup title={field.label} key={field.key}>
+                <SelectControl
+                  label="Source"
+                  value={selectedSource}
+                  options={sourceOptions}
+                  onChange={(value) => updateDynamicBinding(
+                    field.key,
+                    value === "none"
+                      ? undefined
+                      : {
+                          source: value as BuilderDynamicBinding["source"],
+                          fieldName: value === "custom.field" ? binding?.fieldName || "" : undefined,
+                          fallback: binding?.fallback,
+                        },
+                  )}
+                />
+                {selectedSource === "custom.field" ? (
+                  <TextControl
+                    label="Custom Field Key"
+                    value={String(binding?.fieldName || "")}
+                    onChange={(value) => updateDynamicBinding(field.key, {
+                      source: "custom.field",
+                      fieldName: value,
+                      fallback: binding?.fallback,
+                    })}
+                    placeholder="e.g. plan_speed"
+                  />
+                ) : null}
+                {selectedSource !== "none" ? (
+                  <TextControl
+                    label="Fallback Value"
+                    value={String(binding?.fallback || "")}
+                    onChange={(value) => updateDynamicBinding(field.key, {
+                      source: selectedSource as BuilderDynamicBinding["source"],
+                      fieldName: binding?.fieldName,
+                      fallback: value,
+                    })}
+                    placeholder="Used when the dynamic value is empty"
+                  />
+                ) : null}
+              </ControlGroup>
+            );
+          }) : (
+            <p className={styles.mutedText}>
+              This element has no supported text, image or link property to bind. Choose a content widget such as Heading, Text, Image, Image Box or Button.
+            </p>
+          )}
+        </ControlGroup>
+        <p className={styles.mutedText}>
+          Available sources depend on the public page/post context. Custom fields are read from the content record when that context supplies them.
+        </p>
+      </>
+    );
+  };
+  // CONNECT_BUILDER_DYNAMIC_BINDINGS_V1
   const showGlobalSiteShellPreview =
     target.kind !== "header" && target.kind !== "footer";
 
@@ -10402,6 +10523,8 @@ export default function UniversalBuilder({ target }: Props) {
                     {inspectorTab === "style" && renderStylePanel()}
 
                     {inspectorTab === "advanced" && renderAdvancedPanel()}
+
+                    {inspectorTab === "dynamic" && renderDynamicPanel()}
 
                     <button
                       type="button"

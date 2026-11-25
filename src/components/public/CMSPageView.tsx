@@ -1,4 +1,4 @@
-﻿import sanitizeHtml from "sanitize-html";
+import sanitizeHtml from "sanitize-html";
 import type { Page } from "@prisma/client";
 import PublicPageBuilder from "@/components/public/PublicPageBuilder";
 import PublicBuilderDocument from "@/components/public/PublicBuilderDocument";
@@ -15,7 +15,7 @@ type PublicPageRecord = Pick<
 
 function getContentData(content: unknown) {
   if (content && typeof content === "object" && !Array.isArray(content)) {
-    return content as { text?: unknown; featuredImage?: unknown };
+    return content as { text?: unknown; featuredImage?: unknown; customFields?: Record<string, unknown> };
   }
   return {};
 }
@@ -98,6 +98,7 @@ export default async function CMSPageView({
     builderLayout?.elements.length || universalBuilderDocument?.layout.root.length
   );
   const safeHtml = sanitizePageHtml(getPageHtml(page.content));
+  // CONNECT_BUILDER_DYNAMIC_BINDINGS_V1
 
   return (
     <main className="cms-public-page">
@@ -123,6 +124,20 @@ export default async function CMSPageView({
           <PublicBuilderDocument
             layout={universalBuilderDocument.layout}
             globalStyles={universalBuilderDocument.globalStyles}
+            postContext={{
+              id: page.id,
+              kind: "page",
+              title: page.title,
+              slug: page.slug,
+              url: page.canonicalUrl?.trim() || `/${page.slug}/`,
+              description: page.description,
+              excerpt: page.description,
+              contentHtml: safeHtml,
+              featuredImage: featuredImage || null,
+              customFields: contentData.customFields && typeof contentData.customFields === "object" && !Array.isArray(contentData.customFields)
+                ? contentData.customFields
+                : {},
+            }}
           />
         ) : hasBuilderContent && builderLayout ? (
           <PublicPageBuilder layout={builderLayout} />

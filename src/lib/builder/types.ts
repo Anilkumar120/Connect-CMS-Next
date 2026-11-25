@@ -380,6 +380,25 @@ export type BuilderAdvancedSettings = {
   attributes?: Record<string, string>;
 };
 
+export type BuilderDynamicSource =
+  | "current.title"
+  | "current.slug"
+  | "current.url"
+  | "current.description"
+  | "current.excerpt"
+  | "current.content"
+  | "current.featuredImage"
+  | "current.publishedAt"
+  | "current.authorName"
+  | "current.authorBio"
+  | "current.categories"
+  | "custom.field";
+
+export type BuilderDynamicBinding = {
+  source: BuilderDynamicSource;
+  fieldName?: string;
+  fallback?: string;
+};
 export type BuilderNode = {
   id: string;
   type: string;
@@ -389,6 +408,8 @@ export type BuilderNode = {
   children?: BuilderNode[];
   props: Record<string, unknown>;
   styles: BuilderStyle;
+  dynamicBindings?: Record<string, BuilderDynamicBinding>;
+  // CONNECT_BUILDER_DYNAMIC_BINDINGS_V1
   advanced?: BuilderAdvancedSettings;
 };
 
