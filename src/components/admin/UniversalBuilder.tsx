@@ -2098,6 +2098,7 @@ function ControlGroup({
 // BUILDER_LIST_LAYOUT_V6_2
 // BUILDER_ICON_SOCIAL_GAP_V6_4
 // BUILDER_GAP_CONFLICT_FIX_V7
+// BUILDER_GAP_DISPLAY_CONFLICT_V7_2
 function PreviewNode({
   node,
   device,
@@ -2402,8 +2403,8 @@ function PreviewNode({
           listStyle: "none",
           padding: 0,
           margin: 0,
-          display: inlineStyle.display || display,
-          flexDirection: inlineStyle.flexDirection || (listLayout === "inline" ? "row" : "column"),
+          display,
+          flexDirection: listLayout === "inline" ? "row" : "column",
           flexWrap: inlineStyle.flexWrap || (listLayout === "inline" ? "wrap" : "nowrap"),
           gridTemplateColumns: inlineStyle.gridTemplateColumns || (listLayout === "grid" ? `repeat(${listColumns}, minmax(0, 1fr))` : undefined),
           alignItems: listLayout === "inline" ? "center" : listAlignValue,
@@ -2469,7 +2470,7 @@ function PreviewNode({
     const iconGap = cssLength(props.iconGap ?? props.gap ?? inlineStyle.gap, "12px");
     const radius = cssLength(props.shapeRadius, shape === "square" ? "4px" : shape === "rounded" ? "10px" : "999px");
     return (
-      <div {...commonProps} style={{ ...inlineStyle, display: inlineStyle.display || "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap",
+      <div {...commonProps} style={{ ...inlineStyle, display: "flex", flexDirection: inlineStyle.flexDirection || "row", alignItems: inlineStyle.alignItems || "center", justifyContent: inlineStyle.justifyContent || "flex-start", flexWrap: inlineStyle.flexWrap || "wrap",
           gap: iconGap, rowGap: iconGap, columnGap: iconGap, }}>
         {icons.map((entry, index) => {
           const name = String(entry.iconName || entry.name || "");
